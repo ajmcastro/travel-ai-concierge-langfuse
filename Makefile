@@ -1,0 +1,109 @@
+.DEFAULT_GOAL := help
+.PHONY: help install env serve health \
+        langfuse-up langfuse-down langfuse-logs \
+        up down restart logs \
+        test test-unit test-integration \
+        lint format format-check typecheck check \
+        generate-data evaluate eval-ci \
+        clean
+
+# ── Colours ───────────────────────────────────────────────────────────────────
+CYAN  := \033[0;36m
+RESET := \033[0m
+
+help:  ## Show this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-22s$(RESET) %s\n", $$1, $$2}'
+
+# ── Setup ─────────────────────────────────────────────────────────────────────
+
+install:  ## Install all dependencies with uv
+	uv sync --all-groups
+
+env:  ## Copy .env.example → .env if .env does not exist
+	@test -f .env && echo ".env already exists — skipping" || (cp .env.example .env && echo "Created .env from .env.example — fill in credentials before running.")
+
+# ── API server ────────────────────────────────────────────────────────────────
+
+serve:  ## Start the FastAPI development server (auto-reload)
+	uv run uvicorn travel_ai_concierge.api.app:app \
+	  --host $${API_HOST:-0.0.0.0} \
+	  --port $${API_PORT:-8000} \
+	  --reload
+
+health:  ## Check /health endpoint (requires server running)
+	curl -s http://localhost:$${API_PORT:-8000}/health | python3 -m json.tool
+
+# ── Langfuse (Milestone 1) ────────────────────────────────────────────────────
+
+langfuse-up:  ## Start the local self-hosted Langfuse stack
+	docker compose up -d
+
+langfuse-down:  ## Stop the local Langfuse stack
+	docker compose down
+
+langfuse-logs:  ## Tail Langfuse logs
+	docker compose logs -f
+
+# ── Full stack (Milestone 2+) ─────────────────────────────────────────────────
+
+up:  ## Start the full stack (Langfuse + API)
+	docker compose up -d
+
+down:  ## Stop the full stack
+	docker compose down
+
+restart:  ## Restart the full stack
+	docker compose restart
+
+logs:  ## Tail all service logs
+	docker compose logs -f
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+
+test:  ## Run all tests
+	uv run pytest
+
+test-unit:  ## Run unit tests only
+	uv run pytest tests/unit
+
+test-integration:  ## Run integration tests (requires live infrastructure)
+	uv run pytest tests/integration -m integration
+
+# ── Code quality ──────────────────────────────────────────────────────────────
+
+lint:  ## Lint with Ruff
+	uv run ruff check src/ tests/
+
+format:  ## Auto-format with Ruff
+	uv run ruff format src/ tests/
+
+format-check:  ## Check formatting without modifying files
+	uv run ruff format --check src/ tests/
+
+typecheck:  ## Type-check with mypy
+	uv run mypy src/
+
+check: lint format-check typecheck  ## Run all quality checks
+
+# ── Data and evaluation (Milestone 4+) ───────────────────────────────────────
+
+generate-data:  ## Generate synthetic travel data
+	uv run python scripts/generate_data.py
+
+evaluate:  ## Run the evaluation suite
+	uv run python scripts/run_evaluation.py
+
+eval-ci:  ## Run evaluation and exit non-zero on regression
+	uv run python scripts/run_evaluation.py --ci
+
+# ── Housekeeping ──────────────────────────────────────────────────────────────
+
+clean:  ## Remove cache and build artefacts
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .mypy_cache -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .ruff_cache -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+	find . -name ".coverage" -delete 2>/dev/null || true
+	@echo "Cleaned."

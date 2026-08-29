@@ -1,0 +1,31 @@
+# =============================================================================
+# Travel AI Concierge — Docker Compose
+#
+# Milestone 0: skeleton only — Langfuse infrastructure is added in Milestone 1.
+# Milestone 1 will replace the placeholder comment below with the full
+# self-hosted Langfuse v3 stack (postgres, clickhouse, redis, minio, langfuse).
+# =============================================================================
+
+services:
+
+  # ── Milestone 1: Langfuse self-hosted stack ────────────────────────────────
+  # The official Langfuse docker-compose is sourced from:
+  #   https://langfuse.com/self-hosting/docker-compose
+  #
+  # Components added in M1:
+  #   postgres    — primary database (projects, prompts, users, datasets)
+  #   clickhouse  — trace and event storage (high-volume, columnar)
+  #   redis       — background job queues (ingestion pipeline)
+  #   minio       — S3-compatible blob storage (media, exports)
+  #   langfuse    — Next.js web UI + REST/SDK API
+  #
+  # Access: http://localhost:3000
+  #
+  # ──────────────────────────────────────────────────────────────────────────
+
+  # ── Milestone 2+: Travel AI Concierge API ────────────────────────────────
+  # api:
+  #   build: .
+  #   ports: ["8000:8000"]
+  #   env_file: .env
+  #   depends_on: [langfuse]
