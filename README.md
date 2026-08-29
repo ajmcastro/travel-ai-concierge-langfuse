@@ -6,7 +6,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M2 — Minimal concierge with tracing ([progress table](#milestones))  
+> **Current milestone:** M3 — Chat UI ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -35,7 +35,7 @@ Each item below is built at a specific milestone (see the [Milestones](#mileston
 | Package management | [uv](https://docs.astral.sh/uv/) |
 | API | FastAPI |
 | Agent orchestration | LangGraph (Milestone 5) |
-| Chat UI | Streamlit (Milestone 3) |
+| Chat UI | Streamlit ✅ |
 | Observability | [Langfuse](https://langfuse.com) |
 | LLM provider | Anthropic / Mock (OpenAI planned) |
 | Testing | pytest |
@@ -67,6 +67,9 @@ make serve
 
 # 4. Check it's running
 make health
+
+# 5. Start the chat UI (in another terminal)
+make ui
 ```
 
 ---
@@ -131,6 +134,19 @@ No code changes, no different endpoint — same `/chat`, same trace shape, real 
 
 ---
 
+## Chat UI
+
+```bash
+make serve    # API, in one terminal
+make ui       # Streamlit, in another — opens at http://localhost:8501
+```
+
+A real chat interface: multi-turn transcript, a "New conversation" button (fresh `session_id`, cleared history), thumbs up/down under each response, and a sidebar debug panel (session/user ID, model, client-measured latency, and a link straight to the trace in Langfuse).
+
+Talks to the API exclusively over HTTP (`API_BASE_URL` in `.env`) — the UI process never imports agent or provider code, so it can be started, stopped, or deployed independently of the API. Two honest limitations, both visible in the UI itself rather than hidden: feedback buttons are a visible placeholder with no backend effect yet (real Langfuse scoring is Milestone 12), and each message is still sent as a single, stateless request — the LLM doesn't see earlier turns in the same conversation yet (that starts in Milestone 7), even though the transcript displays the full history.
+
+---
+
 ## Development Commands
 
 ```bash
@@ -156,6 +172,9 @@ src/travel_ai_concierge/
 ├── agent/           — LangGraph state and graph (Milestone 5)
 ├── tools/           — Tool implementations (Milestone 4)
 └── evaluation/      — Evaluators and runners (Milestone 9)
+
+ui/
+└── streamlit_app.py — Chat UI ✅ (Milestone 3), talks to the API over HTTP only
 
 data/
 ├── synthetic/       — Synthetic travel data (Milestone 4)
@@ -184,7 +203,7 @@ data/
 | M0 | Scaffolding, config, health API ✅ |
 | M1 | Local Langfuse deployment ✅ |
 | M2 | Minimal concierge with tracing ✅ |
-| M3 | Chat UI |
+| M3 | Chat UI ✅ |
 | M4 | Synthetic travel tools |
 | M5 | LangGraph agent workflow |
 | M6 | Production-like trace design |

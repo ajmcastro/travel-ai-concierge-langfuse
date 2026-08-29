@@ -1,13 +1,13 @@
 # Architecture — Travel AI Concierge
 
-> Last updated: Milestone 2  
+> Last updated: Milestone 3  
 > This document evolves with the project. Each milestone adds to it.
 
 ## Overview
 
 The Travel AI Concierge is an agentic AI application with comprehensive LLM observability via Langfuse. Its primary purpose is to demonstrate production-quality AI engineering practices using a realistic travel domain as the workload.
 
-The diagram below is the **target architecture** — what this system looks like once the LangGraph agent (M5) and travel tools (M4) exist. As of Milestone 2, only the top three boxes and the LLM Provider are real: `POST /chat` calls a provider directly, with no agent graph or tools yet. See [Milestone Status](#milestone-status) for what's actually built today, and the [Trace Structure](#trace-structure) section for the current (simpler) trace shape a real request produces right now.
+The diagram below is the **target architecture** — what this system looks like once the LangGraph agent (M5) and travel tools (M4) exist. As of Milestone 3, the top two boxes and the LLM Provider are real: the Chat UI calls `POST /chat` over HTTP, which calls a provider directly, with no agent graph or tools yet. See [Milestone Status](#milestone-status) for what's actually built today, and the [Trace Structure](#trace-structure) section for the current (simpler) trace shape a real request produces right now.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -62,6 +62,16 @@ Instrumentation (all components above emit to Langfuse):
 ```
 
 ## Component Responsibilities
+
+### Chat UI ✅ Implemented (M3)
+
+Streamlit app (`ui/streamlit_app.py`), a separate process that talks to FastAPI exclusively over HTTP — it never imports agent/provider code. Responsible for:
+- Multi-turn transcript display (client-side history; the backend itself is still stateless per request — see [Milestone 7](#milestone-status))
+- Session continuity (`session_id` persisted per browser session) and reset ("New conversation")
+- A stable, synthetic `user_id` per browser session (not per message)
+- Debug panel: session/user ID, model, client-measured latency, and a link to the trace in Langfuse
+- Feedback placeholders (`st.feedback`) — visible, but not yet sent to Langfuse (Milestone 12)
+- Clean error display when the API is unreachable or returns an error, and when the debug panel's Langfuse trace-link lookup fails (unreachable host, bad credentials, timeout — caught broadly since this is a non-critical convenience, not the core chat feature)
 
 ### FastAPI ✅ Implemented (M0, M2)
 
@@ -123,6 +133,8 @@ Two Langfuse modes:
 
 LLM provider selection (`LLM_PROVIDER=mock|anthropic`) is likewise a `Settings`-driven, one-line config change — see [ADR-003](decisions/ADR-003-llm-provider-abstraction.md) and [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-2--minimal-concierge-with-tracing).
 
+The UI reaches the API via `Settings.api_base_url` (`API_BASE_URL` in `.env`) — a separate value from `api_host`/`api_port`, which describe where the server binds, not where a client should connect. See [ADR-002](decisions/ADR-002-ui-technology.md) and [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-3--chat-ui).
+
 ## Milestone Status
 
 | Milestone | Description                         | Status      |
@@ -130,8 +142,8 @@ LLM provider selection (`LLM_PROVIDER=mock|anthropic`) is likewise a `Settings`-
 | M0        | Scaffolding, config, health API      | ✅ Complete |
 | M1        | Local Langfuse deployment            | ✅ Complete |
 | M2        | Minimal concierge (LLM + tracing)   | ✅ Complete |
-| M3        | Chat UI                              | ⬜ Next     |
-| M4        | Synthetic travel tools               | ⬜ Planned  |
+| M3        | Chat UI                              | ✅ Complete |
+| M4        | Synthetic travel tools               | ⬜ Next     |
 | M5        | LangGraph agent workflow             | ⬜ Planned  |
 | …         | See PROJECT_SPEC.md for full list    |             |
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Travel AI Concierge — a production-quality educational project demonstrating Agentic AI with Langfuse observability. Python 3.12, FastAPI, LangGraph (M5+), Streamlit UI (M3+), uv for all package management.
+Travel AI Concierge — a production-quality educational project demonstrating Agentic AI with Langfuse observability. Python 3.12, FastAPI, Streamlit UI, LangGraph (M5+), uv for all package management.
 
 ## Commands
 
@@ -13,6 +13,7 @@ make install        # uv sync --all-groups
 make env            # copy .env.example → .env if missing
 make serve          # uvicorn with auto-reload (port 8000)
 make health         # curl /health
+make ui             # Streamlit chat UI (port 8501), requires `make serve` running separately
 
 make test           # all tests
 make test-unit      # tests/unit only (no infrastructure)
@@ -49,6 +50,8 @@ Source lives in `src/travel_ai_concierge/` (src layout, installed as editable). 
 - `providers/llm/mock.py` — `MockProvider`, deterministic word-count-based token usage, still opens its own `llm_call` generation span (same shape as the real provider).
 - `providers/llm/anthropic_provider.py` — `AnthropicProvider`. The installed `anthropic` SDK's `messages.create()` has **no `temperature` parameter** — verified by introspection, not assumed; `Settings.llm_temperature` is unused here.
 - `providers/llm/__init__.py` — `get_llm_provider()`, lru_cache'd, selects Mock vs Anthropic from `Settings.llm_provider`.
+
+`ui/streamlit_app.py` (not under `src/` — run via `streamlit run`, not imported as a package) — the Chat UI. Talks to the API only via `httpx2.post(f"{settings.api_base_url}/chat", ...)`, never by importing agent/provider code. **Gotcha 1**: the sidebar debug panel is rendered *before* the `chat_input` handling block in the script's top-to-bottom order, so after a successful exchange the code calls `st.rerun()` before returning — without it, the debug panel would always show the previous turn's trace/model/latency, one interaction behind (`st.session_state` mutations don't retroactively re-render earlier widgets in the same pass). **Gotcha 2**: the sidebar's `get_langfuse_client().get_trace_url(...)` call is wrapped in a broad `except Exception` — verified live (pointed a real server+UI at an unreachable `LANGFUSE_HOST`) that this call raises different exception types depending on failure mode (`httpx2.ConnectError` unreachable, `langfuse.api.commons.errors.UnauthorizedError` bad keys, `httpx2.TimeoutException` slow network); narrower catches would still leak a raw traceback into the UI for the cases not caught. Tested with Streamlit's own `streamlit.testing.v1.AppTest` harness (`tests/unit/test_ui_chat.py`), with `httpx2.post` monkeypatched to stay offline.
 
 ## Architecture
 

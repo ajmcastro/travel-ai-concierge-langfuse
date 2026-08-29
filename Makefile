@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install env serve health chat-smoke-test \
+.PHONY: help install env serve health chat-smoke-test ui \
         langfuse-up langfuse-down langfuse-logs langfuse-smoke-test \
         up down restart logs \
         test test-unit test-integration \
@@ -36,6 +36,9 @@ health:  ## Check /health endpoint (requires server running)
 
 chat-smoke-test:  ## Call POST /chat over real HTTP and print the response (requires `make serve`)
 	uv run python scripts/smoke_test_chat.py
+
+ui:  ## Start the Streamlit chat UI (requires `make serve` running separately)
+	uv run streamlit run ui/streamlit_app.py
 
 # ── Langfuse (Milestone 1) ────────────────────────────────────────────────────
 
@@ -79,16 +82,16 @@ test-integration:  ## Run integration tests (requires live infrastructure)
 # ── Code quality ──────────────────────────────────────────────────────────────
 
 lint:  ## Lint with Ruff
-	uv run ruff check src/ tests/
+	uv run ruff check src/ tests/ ui/
 
 format:  ## Auto-format with Ruff
-	uv run ruff format src/ tests/
+	uv run ruff format src/ tests/ ui/
 
 format-check:  ## Check formatting without modifying files
-	uv run ruff format --check src/ tests/
+	uv run ruff format --check src/ tests/ ui/
 
 typecheck:  ## Type-check with mypy
-	uv run mypy src/
+	uv run mypy src/ ui/
 
 check: lint format-check typecheck  ## Run all quality checks
 

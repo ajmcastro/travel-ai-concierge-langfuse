@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
+    # UI (Milestone 3) — where the Streamlit app reaches the API. Distinct
+    # from api_host (a bind address, e.g. 0.0.0.0) which isn't a valid
+    # client-facing target in every environment.
+    api_base_url: str = "http://localhost:8000"
+
     # Langfuse — works for both local self-hosted and Langfuse Cloud.
     # Switch between modes by changing these three values in .env only.
     langfuse_public_key: str = ""
