@@ -4,7 +4,7 @@
         up down restart logs \
         test test-unit test-integration \
         lint format format-check typecheck check \
-        generate-data evaluate eval-ci \
+        generate-data tools-smoke-test evaluate eval-ci \
         clean
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -97,8 +97,11 @@ check: lint format-check typecheck  ## Run all quality checks
 
 # ── Data and evaluation (Milestone 4+) ───────────────────────────────────────
 
-generate-data:  ## Generate synthetic travel data
+generate-data:  ## Generate synthetic travel data (writes data/synthetic/*.json)
 	uv run python scripts/generate_data.py
+
+tools-smoke-test:  ## Call the travel tools directly and print real Langfuse tool traces
+	uv run python scripts/smoke_test_tools.py
 
 evaluate:  ## Run the evaluation suite
 	uv run python scripts/run_evaluation.py

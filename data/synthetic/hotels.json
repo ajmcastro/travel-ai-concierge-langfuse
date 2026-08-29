@@ -1,0 +1,265 @@
+[
+  {
+    "id": "porto-riverside-boutique",
+    "destination_id": "porto",
+    "name": "Porto Riverside Boutique",
+    "star_rating": 4,
+    "customer_rating": 9.1,
+    "price_band": "mid",
+    "family_friendly": false,
+    "adults_only": true,
+    "amenities": [
+      "wifi",
+      "breakfast",
+      "river-view"
+    ]
+  },
+  {
+    "id": "porto-family-suites",
+    "destination_id": "porto",
+    "name": "Porto Family Suites",
+    "star_rating": 3,
+    "customer_rating": 8.4,
+    "price_band": "budget",
+    "family_friendly": true,
+    "adults_only": false,
+    "amenities": [
+      "wifi",
+      "kitchenette",
+      "pool"
+    ]
+  },
+  {
+    "id": "algarve-beach-resort",
+    "destination_id": "algarve",
+    "name": "Algarve Beach Resort",
+    "star_rating": 5,
+    "customer_rating": 9.0,
+    "price_band": "luxury",
+    "family_friendly": true,
+    "adults_only": false,
+    "amenities": [
+      "pool",
+      "beach-access",
+      "kids-club"
+    ]
+  },
+  {
+    "id": "algarve-adults-retreat",
+    "destination_id": "algarve",
+    "name": "Algarve Adults Retreat",
+    "star_rating": 4,
+    "customer_rating": 8.8,
+    "price_band": "mid",
+    "family_friendly": false,
+    "adults_only": true,
+    "amenities": [
+      "pool",
+      "spa",
+      "quiet"
+    ]
+  },
+  {
+    "id": "algarve-budget-inn",
+    "destination_id": "algarve",
+    "name": "Algarve Budget Inn",
+    "star_rating": 2,
+    "customer_rating": 7.2,
+    "price_band": "budget",
+    "family_friendly": true,
+    "adults_only": false,
+    "amenities": [
+      "wifi"
+    ]
+  },
+  {
+    "id": "lisbon-baixa-hotel",
+    "destination_id": "lisbon",
+    "name": "Lisbon Baixa Hotel",
+    "star_rating": 4,
+    "customer_rating": 8.9,
+    "price_band": "mid",
+    "family_friendly": true,
+    "adults_only": false,
+    "amenities": [
+      "wifi",
+      "breakfast",
+      "rooftop-bar"
+    ]
+  },
+  {
+    "id": "lisbon-hostel-central",
+    "destination_id": "lisbon",
+    "name": "Lisbon Hostel Central",
+    "star_rating": 2,
+    "customer_rating": 8.0,
+    "price_band": "budget",
+    "family_friendly": false,
+    "adults_only": false,
+    "amenities": [
+      "wifi",
+      "shared-kitchen"
+    ]
+  },
+  {
+    "id": "mallorca-family-resort",
+    "destination_id": "mallorca",
+    "name": "Mallorca Family Resort",
+    "star_rating": 4,
+    "customer_rating": 8.7,
+    "price_band": "mid",
+    "family_friendly": true,
+    "adults_only": false,
+    "amenities": [
+      "pool",
+      "kids-club",
+      "beach-access"
+    ]
+  },
+  {
+    "id": "mallorca-party-hotel",
+    "destination_id": "mallorca",
+    "name": "Mallorca Party Hotel",
+    "star_rating": 3,
+    "customer_rating": 7.9,
+    "price_band": "budget",
+    "family_friendly": false,
+    "adults_only": true,
+    "amenities": [
+      "pool",
+      "bar",
+      "nightlife"
+    ]
+  },
+  {
+    "id": "mallorca-luxury-villas",
+    "destination_id": "mallorca",
+    "name": "Mallorca Luxury Villas",
+    "star_rating": 5,
+    "customer_rating": 9.4,
+    "price_band": "luxury",
+    "family_friendly": true,
+    "adults_only": false,
+    "amenities": [
+      "pool",
+      "spa",
+      "sea-view"
+    ]
+  },
+  {
+    "id": "santorini-caldera-suites",
+    "destination_id": "santorini",
+    "name": "Santorini Caldera Suites",
+    "star_rating": 5,
+    "customer_rating": 9.6,
+    "price_band": "luxury",
+    "family_friendly": false,
+    "adults_only": true,
+    "amenities": [
+      "caldera-view",
+      "pool",
+      "spa"
+    ]
+  },
+  {
+    "id": "santorini-budget-studios",
+    "destination_id": "santorini",
+    "name": "Santorini Budget Studios",
+    "star_rating": 2,
+    "customer_rating": 7.5,
+    "price_band": "budget",
+    "family_friendly": true,
+    "adults_only": false,
+    "amenities": [
+      "wifi",
+      "kitchenette"
+    ]
+  },
+  {
+    "id": "tuscany-agriturismo",
+    "destination_id": "tuscany",
+    "name": "Tuscany Agriturismo",
+    "star_rating": 3,
+    "customer_rating": 9.0,
+    "price_band": "mid",
+    "family_friendly": true,
+    "adults_only": false,
+    "amenities": [
+      "pool",
+      "breakfast",
+      "vineyard-view"
+    ]
+  },
+  {
+    "id": "tuscany-boutique-villa",
+    "destination_id": "tuscany",
+    "name": "Tuscany Boutique Villa",
+    "star_rating": 4,
+    "customer_rating": 9.2,
+    "price_band": "luxury",
+    "family_friendly": false,
+    "adults_only": true,
+    "amenities": [
+      "pool",
+      "spa",
+      "wine-tasting"
+    ]
+  },
+  {
+    "id": "reykjavik-city-hotel",
+    "destination_id": "reykjavik",
+    "name": "Reykjavik City Hotel",
+    "star_rating": 3,
+    "customer_rating": 8.3,
+    "price_band": "mid",
+    "family_friendly": true,
+    "adults_only": false,
+    "amenities": [
+      "wifi",
+      "breakfast"
+    ]
+  },
+  {
+    "id": "reykjavik-northern-lights-lodge",
+    "destination_id": "reykjavik",
+    "name": "Reykjavik Northern Lights Lodge",
+    "star_rating": 4,
+    "customer_rating": 8.9,
+    "price_band": "luxury",
+    "family_friendly": false,
+    "adults_only": false,
+    "amenities": [
+      "hot-tub",
+      "aurora-tours"
+    ]
+  },
+  {
+    "id": "kyoto-ryokan-traditional",
+    "destination_id": "kyoto",
+    "name": "Kyoto Traditional Ryokan",
+    "star_rating": 4,
+    "customer_rating": 9.3,
+    "price_band": "luxury",
+    "family_friendly": false,
+    "adults_only": false,
+    "amenities": [
+      "onsen",
+      "kaiseki-dinner",
+      "garden"
+    ]
+  },
+  {
+    "id": "kyoto-budget-guesthouse",
+    "destination_id": "kyoto",
+    "name": "Kyoto Budget Guesthouse",
+    "star_rating": 2,
+    "customer_rating": 8.1,
+    "price_band": "budget",
+    "family_friendly": true,
+    "adults_only": false,
+    "amenities": [
+      "wifi",
+      "shared-kitchen"
+    ]
+  }
+]

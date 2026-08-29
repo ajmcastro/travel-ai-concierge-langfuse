@@ -27,6 +27,9 @@ make langfuse-down        # stop it
 make langfuse-smoke-test  # create a real trace, print its URL (scripts/smoke_test_langfuse.py)
 make chat-smoke-test      # POST /chat over real HTTP against a running `make serve` (scripts/smoke_test_chat.py)
 make test-integration     # tests/integration — requires langfuse-up first
+
+make generate-data        # (re)writes data/synthetic/*.json from scripts/generate_data.py
+make tools-smoke-test     # call the 3 travel tools directly (scripts/smoke_test_tools.py)
 ```
 
 Run a single test file:
@@ -50,6 +53,9 @@ Source lives in `src/travel_ai_concierge/` (src layout, installed as editable). 
 - `providers/llm/mock.py` — `MockProvider`, deterministic word-count-based token usage, still opens its own `llm_call` generation span (same shape as the real provider).
 - `providers/llm/anthropic_provider.py` — `AnthropicProvider`. The installed `anthropic` SDK's `messages.create()` has **no `temperature` parameter** — verified by introspection, not assumed; `Settings.llm_temperature` is unused here.
 - `providers/llm/__init__.py` — `get_llm_provider()`, lru_cache'd, selects Mock vs Anthropic from `Settings.llm_provider`.
+- `domain/models.py` — `Destination`, `Hotel` Pydantic models; `PriceBand` (`"budget"|"mid"|"luxury"`) and `price_band_at_most()` for ceiling-style filtering.
+- `tools/data.py` — `get_destinations()`/`get_hotels()`, lru_cache'd, load `data/synthetic/*.json`. Path resolved via `Path(__file__).resolve().parents[3]` (repo root), not cwd — same pattern as `tests/unit/test_ui_chat.py`'s `APP_PATH`.
+- `tools/travel_tools.py` — `search_destinations`, `search_hotels`, `get_destination_information`. Plain sync functions (nothing to await), each opens its own Langfuse observation with **`as_type="tool"`** — a real, distinct Langfuse type (confirmed by SDK introspection, M1), not just a naming convention. **Not called from anywhere yet** — no LLM/agent wiring until M5; called standalone each becomes its own root trace (no parent span active), and will nest automatically under `travel_concierge_turn` once M5 calls them from within one, with zero changes needed here.
 
 `ui/streamlit_app.py` (not under `src/` — run via `streamlit run`, not imported as a package) — the Chat UI. Talks to the API only via `httpx2.post(f"{settings.api_base_url}/chat", ...)`, never by importing agent/provider code. **Gotcha 1**: the sidebar debug panel is rendered *before* the `chat_input` handling block in the script's top-to-bottom order, so after a successful exchange the code calls `st.rerun()` before returning — without it, the debug panel would always show the previous turn's trace/model/latency, one interaction behind (`st.session_state` mutations don't retroactively re-render earlier widgets in the same pass). **Gotcha 2**: the sidebar's `get_langfuse_client().get_trace_url(...)` call is wrapped in a broad `except Exception` — verified live (pointed a real server+UI at an unreachable `LANGFUSE_HOST`) that this call raises different exception types depending on failure mode (`httpx2.ConnectError` unreachable, `langfuse.api.commons.errors.UnauthorizedError` bad keys, `httpx2.TimeoutException` slow network); narrower catches would still leak a raw traceback into the UI for the cases not caught. Tested with Streamlit's own `streamlit.testing.v1.AppTest` harness (`tests/unit/test_ui_chat.py`), with `httpx2.post` monkeypatched to stay offline.
 
@@ -57,7 +63,7 @@ Source lives in `src/travel_ai_concierge/` (src layout, installed as editable). 
 
 One chat turn → one Langfuse trace. As of M2 that's `travel_concierge_turn` (root span) → one `llm_call` generation; from M5 onward the agent graph adds a span per node in between. See `docs/architecture.md` for diagrams (including the current-vs-target trace shape), `docs/langfuse.md` for the self-hosted deployment reference, and `docs/decisions/` for ADRs.
 
-LangGraph is the agent framework (M5, not built yet — `/chat` calls the LLM provider directly today). LLM provider is a Protocol (`LLM_PROVIDER` env var) with `MockProvider` (default, offline, deterministic) and `AnthropicProvider` (real). Langfuse is self-hosted via Docker Compose by default (v4 — see `docker-compose.yml`); switch to Cloud by changing `LANGFUSE_HOST` in `.env`.
+LangGraph is the agent framework (M5, not built yet — `/chat` calls the LLM provider directly today). LLM provider is a Protocol (`LLM_PROVIDER` env var) with `MockProvider` (default, offline, deterministic) and `AnthropicProvider` (real). Travel tools exist (M4) but are not called from `/chat` or any LLM — see `docs/RATIONALE_PER_MILESTONE.md#milestone-4--synthetic-travel-tools` for why that wiring is deliberately deferred to M5. Langfuse is self-hosted via Docker Compose by default (v4 — see `docker-compose.yml`); switch to Cloud by changing `LANGFUSE_HOST` in `.env`.
 
 Langfuse SDK is v4, OTel-based: `Langfuse(...)` construction does no network I/O; spans batch and export on `flush()`/shutdown. Trace-level attributes (`session_id`, `user_id`, `tags`, `environment`) are set via `propagate_attributes(...)` (a module-level import from `langfuse`, not a client method) — there is no `update_current_trace()`. Capture `span.trace_id` while still inside the `with start_as_current_observation(...)` block; `get_current_trace_id()` returns `None` after it exits. `usage_details` dict keys should be `"input"`/`"output"` — verified to render correctly in the UI; the docstring's own example (`prompt_tokens`/`completion_tokens`) is unverified, don't assume it also works.
 

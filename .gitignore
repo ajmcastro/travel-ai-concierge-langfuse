@@ -29,3 +29,6 @@ volumes/
 
 # Generated docs output
 docs/CHAT_HISTORY.md
+
+# claude
+.claude/settings.json

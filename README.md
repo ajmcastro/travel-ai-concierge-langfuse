@@ -6,7 +6,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M3 — Chat UI ([progress table](#milestones))  
+> **Current milestone:** M4 — Synthetic travel tools ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -147,6 +147,19 @@ Talks to the API exclusively over HTTP (`API_BASE_URL` in `.env`) — the UI pro
 
 ---
 
+## Travel Tools
+
+```bash
+make generate-data      # (re)writes data/synthetic/*.json from scripts/generate_data.py
+make tools-smoke-test   # calls all three tools directly, prints results + real Langfuse traces
+```
+
+Three typed, synchronous functions over a small hand-authored dataset (8 destinations, 18 hotels): `search_destinations`, `search_hotels`, `get_destination_information`. Each call opens a real Langfuse **tool** observation — a distinct type from `span`/`generation`, visible as its own filter facet in the Tracing UI.
+
+**Not yet connected to `/chat` or the LLM** — despite the milestone's name suggesting otherwise, these are independently built and tested first; an LLM actually deciding to call one is Milestone 5's job. The project spec's own framing of M5 ("compare traces from simple chatbot vs. tool-using agent") only makes sense if that comparison doesn't already exist by M4 — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-4--synthetic-travel-tools) for the full reasoning. Calling a tool today produces its own standalone trace; the same code will nest under a real request trace automatically once M5 calls it from one.
+
+---
+
 ## Development Commands
 
 ```bash
@@ -169,15 +182,16 @@ src/travel_ai_concierge/
 ├── api/             — FastAPI app, routes (/health, /chat), request/response schemas
 ├── providers/llm/   — LLM provider abstraction ✅ (Milestone 2): Mock, Anthropic
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
+├── domain/          — Destination, Hotel models ✅ (Milestone 4)
+├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4) — not yet connected to /chat
 ├── agent/           — LangGraph state and graph (Milestone 5)
-├── tools/           — Tool implementations (Milestone 4)
 └── evaluation/      — Evaluators and runners (Milestone 9)
 
 ui/
 └── streamlit_app.py — Chat UI ✅ (Milestone 3), talks to the API over HTTP only
 
 data/
-├── synthetic/       — Synthetic travel data (Milestone 4)
+├── synthetic/       — 8 destinations, 18 hotels ✅ (Milestone 4), regenerate via `make generate-data`
 └── evaluation/      — Evaluation datasets (Milestone 9)
 ```
 
@@ -204,7 +218,7 @@ data/
 | M1 | Local Langfuse deployment ✅ |
 | M2 | Minimal concierge with tracing ✅ |
 | M3 | Chat UI ✅ |
-| M4 | Synthetic travel tools |
+| M4 | Synthetic travel tools ✅ |
 | M5 | LangGraph agent workflow |
 | M6 | Production-like trace design |
 | M7 | Sessions and multi-turn analysis |

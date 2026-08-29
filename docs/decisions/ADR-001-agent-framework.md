@@ -50,10 +50,12 @@ travel_concierge_turn (trace)
 ├── clarify_or_proceed (conditional edge → routing decision)
 ├── select_tools (span / node)
 ├── execute_tools (span / node)
-│   ├── tool.search_destinations
-│   └── tool.search_hotels
+│   ├── search_destinations (tool)
+│   └── search_hotels (tool)
 └── generate_response (span / node)
 ```
+
+> Updated post-Milestone 4: the tools ended up using Langfuse's first-class `tool` observation type rather than a `tool.`-prefixed span name — a real distinct type, not just a naming convention (see [RATIONALE_PER_MILESTONE.md](../RATIONALE_PER_MILESTONE.md#milestone-4--synthetic-travel-tools)). The diagram above reflects that; it was written before that detail was known.
 
 We will NOT use prebuilt LangGraph agents. Every node is a named Python function we write. The graph is declared explicitly and documented.
 

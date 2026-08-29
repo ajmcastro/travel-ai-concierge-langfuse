@@ -1,0 +1,164 @@
+[
+  {
+    "id": "porto",
+    "name": "Porto",
+    "country": "Portugal",
+    "region": "Northern Portugal",
+    "climate": "temperate",
+    "tags": [
+      "food",
+      "wine",
+      "culture",
+      "quiet",
+      "city"
+    ],
+    "best_months": [
+      "Apr",
+      "May",
+      "Jun",
+      "Sep",
+      "Oct"
+    ],
+    "description": "A compact riverside city built on port wine cellars and azulejo-tiled facades, best explored on foot."
+  },
+  {
+    "id": "algarve",
+    "name": "Algarve",
+    "country": "Portugal",
+    "region": "Algarve",
+    "climate": "mediterranean",
+    "tags": [
+      "beach",
+      "family",
+      "nightlife"
+    ],
+    "best_months": [
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep"
+    ],
+    "description": "Portugal's southern coast: cliff-backed beaches, resort towns, and a long summer season."
+  },
+  {
+    "id": "lisbon",
+    "name": "Lisbon",
+    "country": "Portugal",
+    "region": "Lisbon",
+    "climate": "mediterranean",
+    "tags": [
+      "culture",
+      "nightlife",
+      "food",
+      "city"
+    ],
+    "best_months": [
+      "Apr",
+      "May",
+      "Jun",
+      "Sep",
+      "Oct"
+    ],
+    "description": "A hilly capital of tram lines, viewpoints, and a lively restaurant and nightlife scene."
+  },
+  {
+    "id": "mallorca",
+    "name": "Mallorca",
+    "country": "Spain",
+    "region": "Balearic Islands",
+    "climate": "mediterranean",
+    "tags": [
+      "beach",
+      "nightlife",
+      "family"
+    ],
+    "best_months": [
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep"
+    ],
+    "description": "The largest Balearic island, ranging from resort strips to quiet inland villages and mountains."
+  },
+  {
+    "id": "santorini",
+    "name": "Santorini",
+    "country": "Greece",
+    "region": "Cyclades",
+    "climate": "mediterranean",
+    "tags": [
+      "beach",
+      "romantic",
+      "quiet",
+      "culture"
+    ],
+    "best_months": [
+      "May",
+      "Jun",
+      "Sep",
+      "Oct"
+    ],
+    "description": "A volcanic caldera island of whitewashed villages and sunset views, popular with couples."
+  },
+  {
+    "id": "tuscany",
+    "name": "Tuscany",
+    "country": "Italy",
+    "region": "Tuscany",
+    "climate": "temperate",
+    "tags": [
+      "food",
+      "wine",
+      "culture",
+      "quiet",
+      "nature"
+    ],
+    "best_months": [
+      "Apr",
+      "May",
+      "Sep",
+      "Oct"
+    ],
+    "description": "Rolling vineyards and hill towns between Florence and Siena, built around food and wine."
+  },
+  {
+    "id": "reykjavik",
+    "name": "Reykjavik",
+    "country": "Iceland",
+    "region": "Capital Region",
+    "climate": "subarctic",
+    "tags": [
+      "nature",
+      "quiet",
+      "adventure"
+    ],
+    "best_months": [
+      "Jun",
+      "Jul",
+      "Aug"
+    ],
+    "description": "A small capital used as a base for glaciers, geothermal areas, and the surrounding coastline."
+  },
+  {
+    "id": "kyoto",
+    "name": "Kyoto",
+    "country": "Japan",
+    "region": "Kansai",
+    "climate": "temperate",
+    "tags": [
+      "culture",
+      "food",
+      "quiet",
+      "nature"
+    ],
+    "best_months": [
+      "Mar",
+      "Apr",
+      "Oct",
+      "Nov"
+    ],
+    "description": "Japan's former capital, dense with temples, gardens, and traditional wooden neighborhoods."
+  }
+]
