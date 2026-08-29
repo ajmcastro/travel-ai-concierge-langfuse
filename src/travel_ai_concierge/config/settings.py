@@ -32,12 +32,16 @@ class Settings(BaseSettings):
     # Flush traces synchronously in tests so nothing is silently dropped
     langfuse_flush_at_shutdown: bool = True
 
-    # LLM provider — placeholder until Milestone 2
+    # LLM provider
     llm_provider: str = "mock"
     llm_model: str = "mock"
+    # Not passed to AnthropicProvider — the installed SDK's messages.create()
+    # has no temperature parameter (verified by introspection, Milestone 2).
+    # Kept for providers that do support it (e.g. a future OpenAIProvider).
     llm_temperature: float = 0.0
     llm_max_tokens: int = 2048
     llm_timeout_seconds: float = 30.0
+    anthropic_api_key: str = ""
 
 
 @lru_cache(maxsize=1)

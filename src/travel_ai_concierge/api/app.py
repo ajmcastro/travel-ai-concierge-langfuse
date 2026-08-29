@@ -5,9 +5,11 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from travel_ai_concierge.api.routes.chat import router as chat_router
 from travel_ai_concierge.api.routes.health import router as health_router
 from travel_ai_concierge.config import get_settings
 from travel_ai_concierge.logging_config import configure_logging
+from travel_ai_concierge.observability import get_langfuse_client
 
 logger = structlog.get_logger(__name__)
 
@@ -25,6 +27,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         langfuse_enabled=settings.langfuse_enabled,
     )
     yield
+
+    if settings.langfuse_flush_at_shutdown:
+        get_langfuse_client().flush()
     logger.info("shutdown")
 
 
@@ -52,6 +57,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health_router)
+    app.include_router(chat_router)
 
     return app
 

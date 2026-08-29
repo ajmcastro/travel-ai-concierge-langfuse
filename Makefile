@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install env serve health \
+.PHONY: help install env serve health chat-smoke-test \
         langfuse-up langfuse-down langfuse-logs langfuse-smoke-test \
         up down restart logs \
         test test-unit test-integration \
@@ -33,6 +33,9 @@ serve:  ## Start the FastAPI development server (auto-reload)
 
 health:  ## Check /health endpoint (requires server running)
 	curl -s http://localhost:$${API_PORT:-8000}/health | python3 -m json.tool
+
+chat-smoke-test:  ## Call POST /chat over real HTTP and print the response (requires `make serve`)
+	uv run python scripts/smoke_test_chat.py
 
 # ── Langfuse (Milestone 1) ────────────────────────────────────────────────────
 

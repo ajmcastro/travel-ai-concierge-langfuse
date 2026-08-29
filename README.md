@@ -6,7 +6,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M1 — Local Langfuse ([progress table](#milestones))  
+> **Current milestone:** M2 — Minimal concierge with tracing ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -37,7 +37,7 @@ Each item below is built at a specific milestone (see the [Milestones](#mileston
 | Agent orchestration | LangGraph (Milestone 5) |
 | Chat UI | Streamlit (Milestone 3) |
 | Observability | [Langfuse](https://langfuse.com) |
-| LLM provider | Anthropic / OpenAI / Mock |
+| LLM provider | Anthropic / Mock (OpenAI planned) |
 | Testing | pytest |
 | Linting | Ruff |
 | Type checking | mypy |
@@ -73,6 +73,8 @@ make health
 
 ## Langfuse — local self-hosted (default)
 
+**Start this before you call `/chat`** — with the `.env.example` default (`DEBUG=true`), every request flushes to Langfuse before responding; if nothing is listening yet, that's a real ~2.5s retry/backoff penalty per request, not an instant failure. See `docs/EXPERIMENTS.md` (Milestone 2) for the measured number.
+
 ```bash
 # Start the full Langfuse stack: postgres, clickhouse, redis, minio, langfuse-web/worker
 make langfuse-up
@@ -103,6 +105,32 @@ No code changes required.
 
 ---
 
+## Chat API
+
+```bash
+# Talk to it — defaults to the deterministic mock provider, no API key needed
+curl -s -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Plan me a quiet 5-day trip to Portugal"}' | python3 -m json.tool
+
+# Or, with the server already running elsewhere (make serve):
+make chat-smoke-test
+```
+
+Every request is one Langfuse trace: a `travel_concierge_turn` root span with a nested `llm_call` generation recording model, tokens, and latency. Pass the same `session_id` across requests to group them into one conversation; pass `user_id` to attribute a trace to a real, stable identity (omitted rather than fabricated when you don't have one — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-2--minimal-concierge-with-tracing)).
+
+With `DEBUG=true` (the `.env.example` default), the response includes a `trace_id` you can open directly in the Langfuse UI. Switch to the real model:
+
+```env
+LLM_PROVIDER=anthropic
+LLM_MODEL=claude-sonnet-4-5
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+No code changes, no different endpoint — same `/chat`, same trace shape, real tokens and cost instead of a deterministic echo.
+
+---
+
 ## Development Commands
 
 ```bash
@@ -122,11 +150,11 @@ make check             # lint + format-check + typecheck
 ```
 src/travel_ai_concierge/
 ├── config/          — Pydantic Settings
-├── api/             — FastAPI app and routes
+├── api/             — FastAPI app, routes (/health, /chat), request/response schemas
+├── providers/llm/   — LLM provider abstraction ✅ (Milestone 2): Mock, Anthropic
+├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── agent/           — LangGraph state and graph (Milestone 5)
 ├── tools/           — Tool implementations (Milestone 4)
-├── providers/       — LLM provider abstraction (Milestone 2)
-├── observability/   — Langfuse client factory ✅ (Milestone 1)
 └── evaluation/      — Evaluators and runners (Milestone 9)
 
 data/
@@ -155,7 +183,7 @@ data/
 |---|-------------|
 | M0 | Scaffolding, config, health API ✅ |
 | M1 | Local Langfuse deployment ✅ |
-| M2 | Minimal concierge with tracing |
+| M2 | Minimal concierge with tracing ✅ |
 | M3 | Chat UI |
 | M4 | Synthetic travel tools |
 | M5 | LangGraph agent workflow |

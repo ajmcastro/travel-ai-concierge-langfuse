@@ -24,6 +24,7 @@ make check          # lint + format-check + typecheck
 make langfuse-up          # start local Langfuse stack (postgres/clickhouse/redis/minio/web/worker)
 make langfuse-down        # stop it
 make langfuse-smoke-test  # create a real trace, print its URL (scripts/smoke_test_langfuse.py)
+make chat-smoke-test      # POST /chat over real HTTP against a running `make serve` (scripts/smoke_test_chat.py)
 make test-integration     # tests/integration — requires langfuse-up first
 ```
 
@@ -38,18 +39,24 @@ uv run pytest tests/unit/test_health.py -v
 Source lives in `src/travel_ai_concierge/` (src layout, installed as editable). Key modules:
 
 - `config/settings.py` — `Settings` via Pydantic Settings; `get_settings()` is lru_cache'd. Override with env vars or `.env`.
-- `api/app.py` — `create_app()` returns the FastAPI instance; `app` is the module-level singleton used by uvicorn.
+- `api/app.py` — `create_app()` returns the FastAPI instance; `app` is the module-level singleton used by uvicorn. Flushes the Langfuse client on shutdown if `langfuse_flush_at_shutdown`.
 - `api/routes/health.py` — `GET /health`
+- `api/routes/chat.py` — `POST /chat`. Opens one root span (`travel_concierge_turn`) per request, sets `session_id`/`user_id`/`environment` via `propagate_attributes(...)`, calls the configured LLM provider. `trace_id` in the response body is `None` unless `Settings.debug`; `client.flush()` is likewise only called in debug mode — never on the unconditional request path (see ADR-004). **Gotcha**: with the default `DEBUG=true`, calling `/chat` before `make langfuse-up` costs a measured ~2.5s per request (flush retry/backoff against an unreachable host), not a fast failure — start Langfuse first.
+- `api/schemas/chat.py` — `ChatRequest`/`ChatResponse` Pydantic models.
 - `logging_config.py` — structlog, JSON in production, coloured key=value in TTY
-- `observability/langfuse_client.py` — `get_langfuse_client()`, lru_cache'd, built explicitly from `Settings` (SDK's own env-var auto-discovery won't see `.env` — pydantic-settings doesn't mutate `os.environ`). Always returns a real client, even when `langfuse_enabled=False` (passes `tracing_enabled=False` through) — call sites never need an `if enabled:` branch.
+- `observability/langfuse_client.py` — `get_langfuse_client()`, lru_cache'd, built explicitly from `Settings` (SDK's own env-var auto-discovery won't see `.env` — pydantic-settings doesn't mutate `os.environ`). Always returns a real client, even when `langfuse_enabled=False` (passes `tracing_enabled=False` through) — call sites never need an `if enabled:` branch. **Its `lru_cache` is separate from `get_settings()`'s** — tests that monkeypatch Langfuse-related env vars must clear both caches (`get_settings.cache_clear()` and `get_langfuse_client.cache_clear()`), or they'll silently reuse whichever client config the first test in the run happened to construct.
+- `providers/llm/base.py` — `LLMProvider` Protocol, `Message`/`LLMResponse`/`Usage` models.
+- `providers/llm/mock.py` — `MockProvider`, deterministic word-count-based token usage, still opens its own `llm_call` generation span (same shape as the real provider).
+- `providers/llm/anthropic_provider.py` — `AnthropicProvider`. The installed `anthropic` SDK's `messages.create()` has **no `temperature` parameter** — verified by introspection, not assumed; `Settings.llm_temperature` is unused here.
+- `providers/llm/__init__.py` — `get_llm_provider()`, lru_cache'd, selects Mock vs Anthropic from `Settings.llm_provider`.
 
 ## Architecture
 
-One chat turn → one Langfuse trace → spans for each agent node → generations for each LLM call. See `docs/architecture.md` for diagrams, `docs/langfuse.md` for the self-hosted deployment reference, and `docs/decisions/` for ADRs.
+One chat turn → one Langfuse trace. As of M2 that's `travel_concierge_turn` (root span) → one `llm_call` generation; from M5 onward the agent graph adds a span per node in between. See `docs/architecture.md` for diagrams (including the current-vs-target trace shape), `docs/langfuse.md` for the self-hosted deployment reference, and `docs/decisions/` for ADRs.
 
-LangGraph is the agent framework (M5). LLM provider is a Protocol with `MockProvider` (tests) and `AnthropicProvider` (real). Langfuse is self-hosted via Docker Compose by default (v4 — see `docker-compose.yml`); switch to Cloud by changing `LANGFUSE_HOST` in `.env`.
+LangGraph is the agent framework (M5, not built yet — `/chat` calls the LLM provider directly today). LLM provider is a Protocol (`LLM_PROVIDER` env var) with `MockProvider` (default, offline, deterministic) and `AnthropicProvider` (real). Langfuse is self-hosted via Docker Compose by default (v4 — see `docker-compose.yml`); switch to Cloud by changing `LANGFUSE_HOST` in `.env`.
 
-Langfuse SDK is v4, OTel-based: `Langfuse(...)` construction does no network I/O; spans batch and export on `flush()`/shutdown. Trace-level attributes (`session_id`, `user_id`, `tags`, `environment`) are set via `propagate_attributes(...)` (a module-level import from `langfuse`, not a client method) — there is no `update_current_trace()`. Capture `span.trace_id` while still inside the `with start_as_current_observation(...)` block; `get_current_trace_id()` returns `None` after it exits.
+Langfuse SDK is v4, OTel-based: `Langfuse(...)` construction does no network I/O; spans batch and export on `flush()`/shutdown. Trace-level attributes (`session_id`, `user_id`, `tags`, `environment`) are set via `propagate_attributes(...)` (a module-level import from `langfuse`, not a client method) — there is no `update_current_trace()`. Capture `span.trace_id` while still inside the `with start_as_current_observation(...)` block; `get_current_trace_id()` returns `None` after it exits. `usage_details` dict keys should be `"input"`/`"output"` — verified to render correctly in the UI; the docstring's own example (`prompt_tokens`/`completion_tokens`) is unverified, don't assume it also works.
 
 ## Langfuse env vars
 

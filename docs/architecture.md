@@ -1,11 +1,13 @@
 # Architecture — Travel AI Concierge
 
-> Last updated: Milestone 1  
+> Last updated: Milestone 2  
 > This document evolves with the project. Each milestone adds to it.
 
 ## Overview
 
 The Travel AI Concierge is an agentic AI application with comprehensive LLM observability via Langfuse. Its primary purpose is to demonstrate production-quality AI engineering practices using a realistic travel domain as the workload.
+
+The diagram below is the **target architecture** — what this system looks like once the LangGraph agent (M5) and travel tools (M4) exist. As of Milestone 2, only the top three boxes and the LLM Provider are real: `POST /chat` calls a provider directly, with no agent graph or tools yet. See [Milestone Status](#milestone-status) for what's actually built today, and the [Trace Structure](#trace-structure) section for the current (simpler) trace shape a real request produces right now.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -61,23 +63,23 @@ Instrumentation (all components above emit to Langfuse):
 
 ## Component Responsibilities
 
-### FastAPI
+### FastAPI ✅ Implemented (M0, M2)
 
 The HTTP boundary. Accepts chat requests, manages session IDs, and returns responses. Does not contain agent logic. Responsible for:
-- Validating request schemas (Pydantic)
-- Creating/resuming Langfuse traces
-- Delegating to the agent
-- Returning trace IDs in development mode
+- Validating request schemas (Pydantic) — `api/schemas/chat.py`
+- Opening the root Langfuse trace per request and setting session/user/environment attribution — `api/routes/chat.py`
+- Delegating to the LLM provider directly (M2); will delegate to the agent graph instead from M5
+- Returning trace IDs, but only when `Settings.debug` is true
 
-### Travel AI Concierge Agent
+### Travel AI Concierge Agent — Planned (M5)
 
-The LangGraph graph. Defines the agent's reasoning workflow as explicit nodes and conditional edges. Each node is a named Python function. The graph is declared once and can be visualised.
+The LangGraph graph. Defines the agent's reasoning workflow as explicit nodes and conditional edges. Each node is a named Python function. The graph is declared once and can be visualised. Not built yet — `POST /chat` calls the LLM provider directly for now.
 
-### LLM Provider
+### LLM Provider ✅ Implemented (M2)
 
-A Protocol with concrete implementations. Handles all communication with the LLM API. Records a Langfuse `generation` for every call, capturing model, tokens, latency, and cost.
+A Protocol (`providers/llm/base.py`) with two concrete implementations: `MockProvider` (deterministic, offline) and `AnthropicProvider` (real, wraps the Anthropic Messages API). Both record their own Langfuse `generation` for every call — same span name and shape regardless of which is configured (`LLM_PROVIDER` in `.env`), capturing model, tokens, and cost details. `get_llm_provider()` selects between them from `Settings`.
 
-### Travel Tools
+### Travel Tools — Planned (M4)
 
 Plain Python functions with typed signatures. Each tool is a node in the agent graph (or called from a tool-execution node). Tool calls are recorded as Langfuse spans with input/output metadata.
 
@@ -87,7 +89,14 @@ The observability backend. Receives structured trace data from the application. 
 
 ## Trace Structure
 
-One API request → one top-level Langfuse trace:
+One API request → one top-level Langfuse trace. **What `POST /chat` actually produces today (M2)**:
+
+```
+travel_concierge_turn  (trace — session_id, user_id, environment via propagate_attributes)
+└─ llm_call             (generation: model, tokens, latency — MockProvider or AnthropicProvider)
+```
+
+**Target shape once the agent graph and tools exist (M4–M5)** — each node below becomes a real span once it exists, not before:
 
 ```
 travel_concierge_turn  (trace)
@@ -112,14 +121,16 @@ Two Langfuse modes:
 
 `src/travel_ai_concierge/observability/langfuse_client.py` builds the Langfuse client explicitly from `Settings` (`get_langfuse_client()`), rather than relying on the SDK's own env-var auto-discovery — see [ADR-004](decisions/ADR-004-langfuse-deployment.md) and [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-1--local-langfuse) for why.
 
+LLM provider selection (`LLM_PROVIDER=mock|anthropic`) is likewise a `Settings`-driven, one-line config change — see [ADR-003](decisions/ADR-003-llm-provider-abstraction.md) and [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-2--minimal-concierge-with-tracing).
+
 ## Milestone Status
 
 | Milestone | Description                         | Status      |
 |-----------|-------------------------------------|-------------|
 | M0        | Scaffolding, config, health API      | ✅ Complete |
 | M1        | Local Langfuse deployment            | ✅ Complete |
-| M2        | Minimal concierge (LLM + tracing)   | ⬜ Next     |
-| M3        | Chat UI                              | ⬜ Planned  |
+| M2        | Minimal concierge (LLM + tracing)   | ✅ Complete |
+| M3        | Chat UI                              | ⬜ Next     |
 | M4        | Synthetic travel tools               | ⬜ Planned  |
 | M5        | LangGraph agent workflow             | ⬜ Planned  |
 | …         | See PROJECT_SPEC.md for full list    |             |
