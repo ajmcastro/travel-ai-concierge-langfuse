@@ -1,5 +1,7 @@
 # Travel AI Concierge with Langfuse — Project Implementation Prompt
 
+> **What this file is**: the original brief given to the AI pair-programmer (Claude Code) that built this repository, kept verbatim for transparency. It reads like a prompt because it is one — this project is developed milestone-by-milestone through a real human/AI collaboration, and this is the spec that collaboration follows. For a reader-friendly summary of what actually got built and why, start with the main [README](../README.md), [docs/architecture.md](architecture.md), and [docs/RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md) instead — come back here when you want the full, unabridged intent behind a milestone.
+
 I want you to act as a **Senior Machine Learning Engineer, Agentic AI Architect, and LLMOps/AI Observability Engineer** and help me build an educational but production-quality open-source project called:
 
 **Travel AI Concierge — Langfuse Observability Lab**

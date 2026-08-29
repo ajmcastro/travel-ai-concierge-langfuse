@@ -1,6 +1,6 @@
 # Architecture — Travel AI Concierge
 
-> Last updated: Milestone 0  
+> Last updated: Milestone 1  
 > This document evolves with the project. Each milestone adds to it.
 
 ## Overview
@@ -107,16 +107,18 @@ All behaviour is controlled by environment variables via Pydantic Settings.
 See `.env.example` for the full list.
 
 Two Langfuse modes:
-- **Local** (default): `LANGFUSE_HOST=http://localhost:3000` — started via `make langfuse-up`
+- **Local** (default): `LANGFUSE_HOST=http://localhost:${LANGFUSE_WEB_PORT:-3000}` — started via `make langfuse-up`. Full deployment reference: [docs/langfuse.md](langfuse.md).
 - **Cloud**: `LANGFUSE_HOST=https://cloud.langfuse.com` — requires Cloud credentials
+
+`src/travel_ai_concierge/observability/langfuse_client.py` builds the Langfuse client explicitly from `Settings` (`get_langfuse_client()`), rather than relying on the SDK's own env-var auto-discovery — see [ADR-004](decisions/ADR-004-langfuse-deployment.md) and [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-1--local-langfuse) for why.
 
 ## Milestone Status
 
 | Milestone | Description                         | Status      |
 |-----------|-------------------------------------|-------------|
 | M0        | Scaffolding, config, health API      | ✅ Complete |
-| M1        | Local Langfuse deployment            | ⬜ Next     |
-| M2        | Minimal concierge (LLM + tracing)   | ⬜ Planned  |
+| M1        | Local Langfuse deployment            | ✅ Complete |
+| M2        | Minimal concierge (LLM + tracing)   | ⬜ Next     |
 | M3        | Chat UI                              | ⬜ Planned  |
 | M4        | Synthetic travel tools               | ⬜ Planned  |
 | M5        | LangGraph agent workflow             | ⬜ Planned  |
@@ -130,3 +132,4 @@ Two Langfuse modes:
 | [ADR-002](decisions/ADR-002-ui-technology.md) | Streamlit for chat UI |
 | [ADR-003](decisions/ADR-003-llm-provider-abstraction.md) | Protocol-based LLM provider abstraction |
 | [ADR-004](decisions/ADR-004-langfuse-deployment.md) | Self-hosted Langfuse as default, Cloud as optional |
+| [ADR-005](decisions/ADR-005-headless-initialization.md) | Headless-initialize local Langfuse (org/project/keys) rather than manual signup |

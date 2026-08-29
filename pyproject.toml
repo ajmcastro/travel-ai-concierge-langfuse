@@ -34,7 +34,10 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -m 'not integration'"
+markers = [
+    "integration: requires live infrastructure (e.g. local Langfuse) — excluded by default, run via `make test-integration`",
+]
 
 [tool.ruff]
 line-length = 100

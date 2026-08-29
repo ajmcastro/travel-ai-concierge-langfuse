@@ -21,8 +21,10 @@ make format         # ruff format
 make typecheck      # mypy
 make check          # lint + format-check + typecheck
 
-make langfuse-up    # start local Langfuse stack (M1+)
-make langfuse-down  # stop it
+make langfuse-up          # start local Langfuse stack (postgres/clickhouse/redis/minio/web/worker)
+make langfuse-down        # stop it
+make langfuse-smoke-test  # create a real trace, print its URL (scripts/smoke_test_langfuse.py)
+make test-integration     # tests/integration — requires langfuse-up first
 ```
 
 Run a single test file:
@@ -39,12 +41,15 @@ Source lives in `src/travel_ai_concierge/` (src layout, installed as editable). 
 - `api/app.py` — `create_app()` returns the FastAPI instance; `app` is the module-level singleton used by uvicorn.
 - `api/routes/health.py` — `GET /health`
 - `logging_config.py` — structlog, JSON in production, coloured key=value in TTY
+- `observability/langfuse_client.py` — `get_langfuse_client()`, lru_cache'd, built explicitly from `Settings` (SDK's own env-var auto-discovery won't see `.env` — pydantic-settings doesn't mutate `os.environ`). Always returns a real client, even when `langfuse_enabled=False` (passes `tracing_enabled=False` through) — call sites never need an `if enabled:` branch.
 
 ## Architecture
 
-One chat turn → one Langfuse trace → spans for each agent node → generations for each LLM call. See `docs/architecture.md` for diagrams and `docs/decisions/` for ADRs.
+One chat turn → one Langfuse trace → spans for each agent node → generations for each LLM call. See `docs/architecture.md` for diagrams, `docs/langfuse.md` for the self-hosted deployment reference, and `docs/decisions/` for ADRs.
 
-LangGraph is the agent framework (M5). LLM provider is a Protocol with `MockProvider` (tests) and `AnthropicProvider` (real). Langfuse is self-hosted via Docker Compose by default; switch to Cloud by changing `LANGFUSE_HOST` in `.env`.
+LangGraph is the agent framework (M5). LLM provider is a Protocol with `MockProvider` (tests) and `AnthropicProvider` (real). Langfuse is self-hosted via Docker Compose by default (v4 — see `docker-compose.yml`); switch to Cloud by changing `LANGFUSE_HOST` in `.env`.
+
+Langfuse SDK is v4, OTel-based: `Langfuse(...)` construction does no network I/O; spans batch and export on `flush()`/shutdown. Trace-level attributes (`session_id`, `user_id`, `tags`, `environment`) are set via `propagate_attributes(...)` (a module-level import from `langfuse`, not a client method) — there is no `update_current_trace()`. Capture `span.trace_id` while still inside the `with start_as_current_observation(...)` block; `get_current_trace_id()` returns `None` after it exits.
 
 ## Langfuse env vars
 
@@ -52,7 +57,10 @@ LangGraph is the agent framework (M5). LLM provider is a Protocol with `MockProv
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_HOST=http://localhost:3000     # or https://cloud.langfuse.com
+LANGFUSE_WEB_PORT=3000                  # override if 3000 is taken locally
 ```
+
+Integration tests (`tests/integration/`) require `make langfuse-up` and are excluded from `make test`/`make test-unit` by default (`-m "not integration"` in `pyproject.toml`). Run them with `make test-integration`.
 
 ## Stop hook
 

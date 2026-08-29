@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help install env serve health \
-        langfuse-up langfuse-down langfuse-logs \
+        langfuse-up langfuse-down langfuse-logs langfuse-smoke-test \
         up down restart logs \
         test test-unit test-integration \
         lint format format-check typecheck check \
@@ -44,6 +44,9 @@ langfuse-down:  ## Stop the local Langfuse stack
 
 langfuse-logs:  ## Tail Langfuse logs
 	docker compose logs -f
+
+langfuse-smoke-test:  ## Create a real test trace and print its URL
+	uv run python scripts/smoke_test_langfuse.py
 
 # ── Full stack (Milestone 2+) ─────────────────────────────────────────────────
 
