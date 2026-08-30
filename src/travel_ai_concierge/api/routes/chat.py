@@ -39,23 +39,48 @@ async def chat(request: ChatRequest) -> ChatResponse:
             session_id=session_id,
             user_id=request.user_id,
             environment=settings.environment,
+            # Milestone 6: `agent_enabled` is the one feature flag this app
+            # has today, and it changes trace *shape* (agent loop vs. direct
+            # call) — worth a tag you can filter by in the UI, not just a
+            # metadata field you'd have to open each trace to see.
+            tags=[
+                "agent" if settings.agent_enabled else "direct-llm",
+                f"provider:{settings.llm_provider}",
+            ],
+            metadata={
+                "agent_enabled": settings.agent_enabled,
+                "llm_provider": settings.llm_provider,
+            },
+            # Only the agent path has an agent version to report; the direct
+            # path (AGENT_ENABLED=false) isn't running agent code at all.
+            version=settings.agent_version if settings.agent_enabled else None,
         ):
             messages = [
                 Message(role="system", content=SYSTEM_PROMPT),
                 Message(role="user", content=request.message),
             ]
 
-            if settings.agent_enabled:
-                # Milestone 5: the LangGraph agent/tools loop. Flip
-                # AGENT_ENABLED=false to compare against the Milestone 2
-                # direct-call trace shape on the same endpoint, same provider.
-                graph = get_agent_graph()
-                result = await graph.ainvoke({"messages": messages, "iterations": 0})
-                final_message = result["messages"][-1]
-                content = final_message.content
-            else:
-                response = await provider.complete(messages)
-                content = response.content
+            try:
+                if settings.agent_enabled:
+                    # Milestone 5: the LangGraph agent/tools loop. Flip
+                    # AGENT_ENABLED=false to compare against the Milestone 2
+                    # direct-call trace shape on the same endpoint, same
+                    # provider.
+                    graph = get_agent_graph()
+                    result = await graph.ainvoke({"messages": messages, "iterations": 0})
+                    final_message = result["messages"][-1]
+                    content = final_message.content
+                else:
+                    response = await provider.complete(messages)
+                    content = response.content
+            except Exception as exc:
+                # Milestone 6: record error metadata on the trace explicitly
+                # rather than letting it surface only as an opaque 500 — a
+                # real production trace should say *why* a turn failed, not
+                # just that it did. Re-raised unchanged: FastAPI's default
+                # exception handling still returns 500 to the caller.
+                root_span.update(level="ERROR", status_message=str(exc))
+                raise
 
         root_span.update(output={"message": content})
 

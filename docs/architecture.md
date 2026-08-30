@@ -1,6 +1,6 @@
 # Architecture — Travel AI Concierge
 
-> Last updated: Milestone 5  
+> Last updated: Milestone 6  
 > This document evolves with the project. Each milestone adds to it.
 
 ## Overview
@@ -72,19 +72,20 @@ Streamlit app (`ui/streamlit_app.py`), a separate process that talks to FastAPI 
 - Feedback placeholders (`st.feedback`) — visible, but not yet sent to Langfuse (Milestone 12)
 - Clean error display when the API is unreachable or returns an error, and when the debug panel's Langfuse trace-link lookup fails (unreachable host, bad credentials, timeout — caught broadly since this is a non-critical convenience, not the core chat feature)
 
-### FastAPI ✅ Implemented (M0, M2, M5)
+### FastAPI ✅ Implemented (M0, M2, M5, M6)
 
 The HTTP boundary. Accepts chat requests, manages session IDs, and returns responses. Does not contain agent logic itself — it delegates. Responsible for:
 - Validating request schemas (Pydantic) — `api/schemas/chat.py`
-- Opening the root Langfuse trace per request and setting session/user/environment attribution — `api/routes/chat.py`
+- Opening the root Langfuse trace per request and setting session/user/environment/tags/metadata/version attribution — `api/routes/chat.py` (M6 adds tags, metadata, and the `agent_version` axis; see [TRACE_DESIGN.md](TRACE_DESIGN.md))
 - Delegating to the agent graph by default (`Settings.agent_enabled`, M5), or the LLM provider directly when `agent_enabled=False` (the M2 shape, kept as a live comparison point rather than deleted)
+- Recording `level="ERROR"`/`status_message` on the root trace if the turn raises, before re-raising (M6)
 - Returning trace IDs, but only when `Settings.debug` is true
 
 ### Travel AI Concierge Agent ✅ Implemented (M5)
 
 A hand-written LangGraph graph (`agent/graph.py`) — no `langgraph.prebuilt` agent, per [ADR-001](decisions/ADR-001-agent-framework.md). Two nodes:
 - **`agent`** (`agent/nodes.py`) — one LLM call with the travel tools offered. Opens a real Langfuse **`agent`** observation (a distinct type, like `tool` in M4). If the model requests a tool, routes to `tools`; otherwise the graph ends.
-- **`tools`** — executes every tool call the last `agent` message requested, wrapped in one `execute_tools` span so multiple calls in one turn nest together; each individual call is still its own `tool` observation underneath (M4, unchanged).
+- **`tools`** — executes every tool call the last `agent` message requested, wrapped in one `execute_tools` span so multiple calls in one turn nest together; each individual call is still its own `tool` observation underneath (M4, unchanged). Since M6, `execute_tools` records `level="ERROR"` with a `status_message` naming which call(s) failed — see [TRACE_DESIGN.md](TRACE_DESIGN.md#3-error-metadata) for why this needed to live here rather than inside the individual tool functions.
 
 Two independent safeguards against an unbounded loop (`Settings.agent_max_iterations`, default 5): the `agent` node withholds tools once about to make the last allowed call (so a well-behaved provider produces a clean final answer, not an empty-content dead end), and routing separately hard-stops regardless of the last message's content (so a provider that ignores having no tools still can't loop forever). See [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-5--explicit-agentic-ai-workflow) for the off-by-one bug this design went through before it was correct.
 
@@ -107,10 +108,16 @@ The observability backend. Receives structured trace data from the application. 
 
 ## Trace Structure
 
-One API request → one top-level Langfuse trace. **What `POST /chat` produces today when no tool is needed** (`agent_enabled=True`, the default — same shape whether the model answers directly or is asked something it doesn't need a tool for):
+One API request → one top-level Langfuse trace. Every trace carries, since
+Milestone 6, `session_id`/`user_id`/`environment` (from M2), plus `tags`,
+`metadata`, and — on the agent path — an independent `agent_version`; see
+[docs/TRACE_DESIGN.md](TRACE_DESIGN.md) for the full taxonomy and the
+error-metadata design (`level`/`status_message`) this milestone also added.
+
+**What `POST /chat` produces today when no tool is needed** (`agent_enabled=True`, the default — same shape whether the model answers directly or is asked something it doesn't need a tool for):
 
 ```
-travel_concierge_turn  (trace — session_id, user_id, environment via propagate_attributes)
+travel_concierge_turn  (trace — session_id, user_id, environment, tags, metadata, agent_version via propagate_attributes)
 └─ agent                (agent observation, iteration 0)
    └─ llm_call          (generation: model, tokens, latency)
 ```
@@ -140,6 +147,8 @@ travel_concierge_turn  (trace)
 
 A standalone tool call (`make tools-smoke-test`, or a test calling `search_hotels(...)` directly) still produces its own single-node root trace, unnested — the same code the agent's `tools` node calls, just with no parent trace active. Confirmed unchanged since Milestone 4.
 
+**If a tool call fails** (unknown tool name, or missing/malformed arguments — both realistic outcomes of an LLM hallucinating a call), `execute_tools` gets `level="ERROR"` and a `status_message` naming which call(s) failed, in addition to the graceful text-based recovery the agent already had (see [TRACE_DESIGN.md](TRACE_DESIGN.md#3-error-metadata)). **If anything else raises during a turn**, `travel_concierge_turn` itself gets the same `level="ERROR"` treatment before the exception is re-raised — the HTTP response is still a 500, but the trace now says why.
+
 ## Configuration
 
 All behaviour is controlled by environment variables via Pydantic Settings.  
@@ -159,6 +168,8 @@ The synthetic travel dataset (`data/synthetic/*.json`) is not `Settings`-configu
 
 `Settings.agent_enabled` (default `True`) and `Settings.agent_max_iterations` (default `5`) control the Milestone 5 agent graph — see [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-5--explicit-agentic-ai-workflow) for why this is a flag rather than two permanent code paths.
 
+`Settings.agent_version` (default `"1.0.0"`) is Milestone 6's addition — bump it when the agent's own graph/node logic changes materially, independent of `Settings.app_version`. See [docs/TRACE_DESIGN.md](TRACE_DESIGN.md) for the full taxonomy this milestone introduced (tags, metadata, error levels).
+
 ## Milestone Status
 
 | Milestone | Description                         | Status      |
@@ -169,7 +180,8 @@ The synthetic travel dataset (`data/synthetic/*.json`) is not `Settings`-configu
 | M3        | Chat UI                              | ✅ Complete |
 | M4        | Synthetic travel tools               | ✅ Complete |
 | M5        | LangGraph agent workflow             | ✅ Complete |
-| M6        | Production-like trace design         | ⬜ Next     |
+| M6        | Production-like trace design         | ✅ Complete |
+| M7        | Sessions and multi-turn analysis     | ⬜ Next     |
 | …         | See PROJECT_SPEC.md for full list    |             |
 
 ## Architecture Decision Records

@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     # "tool-using agent" traces, same endpoint, same provider config.
     agent_enabled: bool = True
     agent_max_iterations: int = 5
+    # Milestone 6: versioned independently of app_version. app_version tracks
+    # the whole deployable app's release; agent_version tracks only the
+    # agent's own reasoning/graph logic, which can change without a full app
+    # release (or vice versa). Maps to Langfuse's `version` propagation
+    # attribute, whose own docstring names "agents" as the intended use case
+    # for a second, independent version axis.
+    agent_version: str = "1.0.0"
 
 
 @lru_cache(maxsize=1)

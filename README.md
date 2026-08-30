@@ -6,7 +6,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M5 — Explicit Agentic AI workflow ([progress table](#milestones))  
+> **Current milestone:** M6 — Production-like trace design ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -129,6 +129,8 @@ curl -s -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
 
 Pass the same `session_id` across requests to group them into one conversation; pass `user_id` to attribute a trace to a real, stable identity (omitted rather than fabricated when you don't have one — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-2--minimal-concierge-with-tracing)).
 
+Since Milestone 6, every trace also carries `tags` (`agent`/`direct-llm`, `provider:<name>`), structured `metadata` (`agent_enabled`, `llm_provider`), and — on the agent path — its own `agent_version`, independent of `app_version`. If a tool call fails or the turn raises, the relevant observation is marked `level="ERROR"` with a `status_message` instead of the failure being visible only as text. Full taxonomy and a real good-vs-poor example: [docs/TRACE_DESIGN.md](docs/TRACE_DESIGN.md).
+
 With `DEBUG=true` (the `.env.example` default), the response includes a `trace_id` you can open directly in the Langfuse UI. Switch to the real model:
 
 ```env
@@ -223,6 +225,7 @@ data/
 | Read this... | ...when you want to |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | See the current system diagram, trace structure, and component responsibilities |
+| [docs/TRACE_DESIGN.md](docs/TRACE_DESIGN.md) | Understand the naming/tags/metadata/version/error-level taxonomy, and see a real good-vs-poor trace design example |
 | [docs/langfuse.md](docs/langfuse.md) | Understand or troubleshoot the self-hosted Langfuse stack — services, ports, credentials |
 | [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) | Understand *why* a milestone was built the way it was, not just what it does |
 | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) | See what was actually tried and measured, including surprises and dead ends |
@@ -241,7 +244,7 @@ data/
 | M3 | Chat UI ✅ |
 | M4 | Synthetic travel tools ✅ |
 | M5 | LangGraph agent workflow ✅ |
-| M6 | Production-like trace design |
+| M6 | Production-like trace design ✅ |
 | M7 | Sessions and multi-turn analysis |
 | M8 | Prompt management |
 | M9 | Evaluation framework |

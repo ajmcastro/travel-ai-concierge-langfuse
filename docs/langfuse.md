@@ -89,6 +89,30 @@ Open the printed URL. In the UI you should see:
 
 If you'd rather do the manual signup flow: leave the `LANGFUSE_INIT_*` variables blank, start the stack, and use "Sign up" on the login page instead. You'll create the org/project/keys by hand and paste the generated keys into `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` in `.env` yourself.
 
+## Querying trace data programmatically
+
+This deployment runs Langfuse v4 in **"events_only" mode** — confirmed live (Milestone 6) by calling the public REST API directly:
+
+```bash
+curl -u "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" \
+  "http://localhost:${LANGFUSE_WEB_PORT:-3000}/api/public/traces/<trace-id>"
+# {"message":"This endpoint is not available on deployments running in
+#  Langfuse v4 events_only mode. Learn more about Langfuse v4 at:
+#  https://langfuse.com/docs/v4"}
+```
+
+`GET /api/public/traces/{id}` and `GET /api/public/observations` both return
+this same message rather than data — **ingestion works normally** (the SDK
+writes traces exactly as documented, and they render correctly in the UI),
+but the read-side REST API for traces/observations specifically is disabled.
+If you need to verify what actually got recorded on a trace without opening
+the UI (e.g. from a script or a sandboxed environment without browser access
+to `localhost`), don't reach for this API — see `tests/unit/test_trace_design.py`
+for the pattern that actually works offline: construct a `Langfuse` client
+with `span_exporter=InMemorySpanExporter()` and read the attributes off the
+finished spans directly, since that exercises the exact same SDK code without
+depending on any read API at all.
+
 ## Stopping / resetting
 
 ```bash

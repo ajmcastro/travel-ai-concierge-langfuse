@@ -90,16 +90,20 @@ async def tools_node(state: AgentState) -> dict[str, object]:
         name="execute_tools",
         input={"tool_calls": [tc.name for tc in last_message.tool_calls]},
     ) as span:
+        failed: list[str] = []
+
         for call in last_message.tool_calls:
             func = TOOL_REGISTRY.get(call.name)
             if func is None:
                 result_content = f"Error: unknown tool {call.name!r}"
+                failed.append(call.name)
             else:
                 try:
                     result_content = _serialize_tool_result(func(**call.arguments))
                 except Exception as exc:  # noqa: BLE001 — a hallucinated tool call is the
                     # agent's problem to recover from, not a reason to fail the request.
                     result_content = f"Error executing {call.name}: {exc}"
+                    failed.append(call.name)
 
             new_messages.append(
                 Message(
@@ -110,6 +114,18 @@ async def tools_node(state: AgentState) -> dict[str, object]:
                 )
             )
 
-        span.update(output={"executed": len(last_message.tool_calls)})
+        # Milestone 6: error metadata. A missing/malformed argument fails
+        # during `func(**call.arguments)`'s own argument binding — before the
+        # tool function's own `with` block (and its `tool`-type observation)
+        # ever opens — so this is the only observation that would otherwise
+        # ever record that failure happened at all. Without this, the error
+        # is invisible except as text inside the next `llm_call`'s input.
+        span.update(
+            output={"executed": len(last_message.tool_calls), "failed": failed},
+            level="ERROR" if failed else None,
+            status_message=f"{len(failed)} of {len(last_message.tool_calls)} tool call(s) failed: {failed}"
+            if failed
+            else None,
+        )
 
     return {"messages": new_messages}
