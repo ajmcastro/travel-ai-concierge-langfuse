@@ -1,0 +1,99 @@
+"""Milestone 10: run the evaluation dataset as a Langfuse experiment.
+
+Reuses Milestone 9's evaluators and runner unchanged — this module is only
+the adapter layer between our own `EvaluationCase`/`CaseResult`/
+`EvaluatorResult` shapes and the SDK's generic `run_experiment()` protocol
+(`item.input`/`.expected_output`/`.metadata`, `Evaluation` objects). Verified
+against a real local Langfuse instance before writing this for real: nested
+tracing inside a `task()` function composes correctly with the SDK's own
+dataset-run linking, the same "nesting is free" property established since
+Milestone 4 for Langfuse spans generally.
+
+Deliberately not attempting to compute cost/token-usage aggregates here —
+Langfuse already captures those natively per generation (unchanged since
+Milestone 2) and surfaces them in the dataset run's own comparison view
+(`ExperimentResult.dataset_run_url`); recomputing them locally would
+duplicate the SDK and require plumbing usage totals through `AgentState`,
+well beyond this milestone's actual scope. See
+docs/RATIONALE_PER_MILESTONE.md (Milestone 10).
+"""
+
+from collections.abc import Callable
+from typing import Any
+
+from langfuse import Evaluation
+from langfuse.experiment import ExperimentResult
+
+from travel_ai_concierge.evaluation.evaluators import EVALUATORS, Evaluator
+from travel_ai_concierge.evaluation.langfuse_sync import DATASET_NAME
+from travel_ai_concierge.evaluation.models import CaseResult, EvaluationCase
+from travel_ai_concierge.evaluation.runner import run_case
+from travel_ai_concierge.observability import get_langfuse_client
+
+
+def _case_from_parts(
+    input_data: dict[str, Any],
+    expected_output: dict[str, Any] | None,
+    metadata: dict[str, Any] | None,
+) -> EvaluationCase:
+    expected = expected_output or {}
+    meta = metadata or {}
+    return EvaluationCase(
+        id=meta.get("case_id", "unknown"),
+        query_class=meta.get("query_class", "unknown"),
+        message=input_data["message"],
+        expected_tools=expected.get("expected_tools", []),
+        expected_arguments=expected.get("expected_arguments", {}),
+        expects_clarification=expected.get("expects_clarification", False),
+    )
+
+
+async def _task(*, item: Any, **kwargs: object) -> dict[str, Any]:
+    case = _case_from_parts(item.input, item.expected_output, item.metadata)
+    result = await run_case(case)
+    return result.model_dump()
+
+
+def _adapt_evaluator(evaluator: Evaluator) -> Callable[..., list[Evaluation]]:
+    """Wrap one Milestone 9 evaluator as a Langfuse EvaluatorFunction.
+
+    Maps pass/fail to a numeric 1.0/0.0 (so the SDK's own `.format()` can
+    average it across items automatically) and skip to an empty evaluation
+    list (so a not-applicable case is excluded from that average entirely,
+    not counted as a failure — same semantics M9 established locally).
+    """
+
+    def adapted(
+        *, input: Any, output: Any, expected_output: Any, metadata: Any, **kwargs: object
+    ) -> list[Evaluation]:
+        case = _case_from_parts(input, expected_output, metadata)
+        result = CaseResult(**output)
+        evaluation = evaluator(case, result)
+        if evaluation.outcome == "skip":
+            return []
+        return [
+            Evaluation(
+                name=evaluation.evaluator,
+                value=1.0 if evaluation.outcome == "pass" else 0.0,
+                comment=evaluation.detail or None,
+            )
+        ]
+
+    adapted.__name__ = evaluator.__name__
+    return adapted
+
+
+def run_named_experiment(
+    *, run_name: str, description: str | None = None, dataset_name: str = DATASET_NAME
+) -> ExperimentResult:
+    client = get_langfuse_client()
+    dataset = client.get_dataset(dataset_name)
+    result = dataset.run_experiment(
+        name="Travel Concierge Evaluation",
+        run_name=run_name,
+        description=description,
+        task=_task,
+        evaluators=[_adapt_evaluator(evaluator) for evaluator in EVALUATORS],
+    )
+    client.flush()
+    return result

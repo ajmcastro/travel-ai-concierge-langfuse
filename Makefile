@@ -6,6 +6,7 @@
         lint format format-check typecheck check \
         generate-data tools-smoke-test generate-eval-dataset evaluate eval-ci \
         seed-prompts prompts-smoke-test \
+        sync-eval-dataset experiment-prompt-v1 experiment-prompt-v2 \
         clean
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -13,7 +14,7 @@ CYAN  := \033[0;36m
 RESET := \033[0m
 
 help:  ## Show this help message
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-24s$(RESET) %s\n", $$1, $$2}'
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
@@ -126,6 +127,17 @@ seed-prompts:  ## Create/update system prompt v1 (production) + v2 (staging) in 
 
 prompts-smoke-test:  ## Compare prompt v1 vs v2 (no server needed; run `make seed-prompts` first)
 	uv run python scripts/smoke_test_prompts.py
+
+# ── Langfuse datasets and experiments (Milestone 10) ─────────────────────────
+
+sync-eval-dataset:  ## Publish/update data/evaluation/cases.json as a Langfuse Dataset
+	uv run python scripts/sync_eval_dataset.py
+
+experiment-prompt-v1:  ## Run the eval dataset as a Langfuse experiment against prompt v1 (production)
+	PROMPT_LABEL=production uv run python scripts/run_experiment.py --run-name prompt-v1 --description "System prompt v1 (production)"
+
+experiment-prompt-v2:  ## Run the eval dataset as a Langfuse experiment against prompt v2 (staging)
+	PROMPT_LABEL=staging uv run python scripts/run_experiment.py --run-name prompt-v2 --description "System prompt v2 (staging)"
 
 # ── Housekeeping ──────────────────────────────────────────────────────────────
 

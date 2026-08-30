@@ -6,7 +6,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M9 — Evaluation framework ([progress table](#milestones))  
+> **Current milestone:** M10 — Langfuse datasets and experiments ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -184,13 +184,29 @@ make evaluate               # run it, print a human-readable + JSON report
 make eval-ci                # same, exits 1 only if a case crashed outright
 ```
 
-Since Milestone 9, a local, deterministic evaluation harness runs 39 hand-authored test cases through the *real* agent graph (no Langfuse dataset dependency yet — that's [Milestone 10](#milestones)). Cases cover all 20 query classes the project spec names — destination/hotel recommendation, family/couples holiday, budget/luxury, beach/city/culture/nightlife/quiet/food-wine, itinerary planning, vague requests, multi-constraint, needs-clarification, one-tool, multi-tool, impossible-constraint, contradictory-preferences — grounded in the real synthetic destinations/hotels, not invented data.
+Since Milestone 9, a local, deterministic evaluation harness runs 39 hand-authored test cases through the *real* agent graph — deliberately independent of Langfuse datasets at this layer (that's [below](#langfuse-datasets-and-experiments), Milestone 10, a separate optional publishing step). Cases cover all 20 query classes the project spec names — destination/hotel recommendation, family/couples holiday, budget/luxury, beach/city/culture/nightlife/quiet/food-wine, itinerary planning, vague requests, multi-constraint, needs-clarification, one-tool, multi-tool, impossible-constraint, contradictory-preferences — grounded in the real synthetic destinations/hotels, not invented data.
 
 Five deterministic (Layer 1 — no LLM judge yet, that's [Milestone 11](#milestones)) evaluators check each case: expected tool called, tool arguments satisfy the stated constraints, the response is non-empty, the response actually references what a tool returned (a groundedness *proxy*, not semantic scoring), and — where expected — a clarifying question was asked. Each evaluator can also `skip` a case it doesn't apply to, so out-of-scope checks aren't counted as failures.
 
 **Read the report's own note before judging a low pass rate**: under the default `MockProvider`, most tool-usage and clarification checks fail — not because the agent is broken, but because Mock is a fixed keyword-trigger table with no real reasoning (see [providers/llm/mock.py](src/travel_ai_concierge/providers/llm/mock.py)). The dataset describes what a *real* agent should do; run with `LLM_PROVIDER=anthropic` for a meaningful signal. `make eval-ci`'s `--ci` flag is **not** a regression/baseline gate yet — that's explicitly [Milestone 17](#milestones)'s job.
 
 Each case runs as a real Langfuse trace, tagged `evaluation` plus its query class — inspectable exactly like production traffic, not a hidden side process.
+
+---
+
+## Langfuse Datasets and Experiments
+
+```bash
+make sync-eval-dataset      # publish/update the same 39 cases as a real Langfuse Dataset
+make experiment-prompt-v1   # run it — PROMPT_LABEL=production, run_name="prompt-v1"
+make experiment-prompt-v2   # run it — PROMPT_LABEL=staging,   run_name="prompt-v2"
+```
+
+Since Milestone 10, the exact same dataset from [Evaluation](#evaluation) above can also be published to a real Langfuse Dataset (`travel-concierge-eval-cases`, upserted by case id — safe to re-run after editing `cases.json`) and run as a named, comparable experiment, using the Langfuse SDK's own `run_experiment()` API rather than anything hand-rolled. `make experiment-prompt-v1`/`-v2` is the spec's own "Experiment A" worked example: the same 39 cases, same evaluators, two different `PROMPT_LABEL`s, two `run_name`s on the *same* dataset — open the printed `dataset_run_url` to compare them side by side natively in Langfuse.
+
+Quality scores are pushed to Langfuse automatically by the SDK (pass→1.0/fail→0.0/skip→no score, so out-of-scope checks don't drag down the average). Cost and token usage are **not** recomputed here — Langfuse already captures them per generation and shows them in that same comparison view; duplicating that arithmetic locally isn't this milestone's job (see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-10--langfuse-datasets-and-experiments)).
+
+`data/evaluation/cases.json` stays the source of truth throughout — Langfuse is an execution/analysis layer here, not where test cases are authored or edited.
 
 ---
 
@@ -261,7 +277,7 @@ src/travel_ai_concierge/
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
 ├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5)
-└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9)
+└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10)
 
 ui/
 └── streamlit_app.py — Chat UI ✅ (Milestone 3), talks to the API over HTTP only
@@ -301,7 +317,8 @@ data/
 | M7 | Sessions and multi-turn analysis ✅ |
 | M8 | Prompt management ✅ |
 | M9 | Evaluation framework ✅ |
-| M10–M21 | Datasets, experiments, LLM-as-judge, regression… |
+| M10 | Langfuse datasets and experiments ✅ |
+| M11–M21 | LLM-as-judge, human feedback, regression… |
 
 ---
 

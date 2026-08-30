@@ -1,13 +1,13 @@
 # Architecture — Travel AI Concierge
 
-> Last updated: Milestone 9  
+> Last updated: Milestone 10  
 > This document evolves with the project. Each milestone adds to it.
 
 ## Overview
 
 The Travel AI Concierge is an agentic AI application with comprehensive LLM observability via Langfuse. Its primary purpose is to demonstrate production-quality AI engineering practices using a realistic travel domain as the workload.
 
-As of Milestone 5, everything in the diagram below is real **except** the OpenAI provider and `build_itinerary` tool (shown for scale — future, unimplemented) and the Travel AI Search API integration (Milestone 18, optional). The Chat UI calls `POST /chat` over HTTP, which runs the LangGraph agent by default (`Settings.agent_enabled`, default `True`) — the agent decides whether to answer directly or call a tool, executes it if so, and loops back until it has a final answer. Since Milestone 7, each call also carries real conversation memory: prior turns in the same `session_id` are replayed into context, not just grouped in Langfuse. Since Milestone 8, the system prompt itself is fetched from Langfuse Prompt Management rather than hardcoded — see [Prompt Management](#prompt-management-m8) below. Since Milestone 9, a local deterministic evaluation harness (`make evaluate`) runs a 39-case dataset through this same agent — see "Evaluation Framework" below. See the [Trace Structure](#trace-structure) section for what a real request actually produces, and [Milestone Status](#milestone-status) for what's implemented per milestone.
+As of Milestone 5, everything in the diagram below is real **except** the OpenAI provider and `build_itinerary` tool (shown for scale — future, unimplemented) and the Travel AI Search API integration (Milestone 18, optional). The Chat UI calls `POST /chat` over HTTP, which runs the LangGraph agent by default (`Settings.agent_enabled`, default `True`) — the agent decides whether to answer directly or call a tool, executes it if so, and loops back until it has a final answer. Since Milestone 7, each call also carries real conversation memory: prior turns in the same `session_id` are replayed into context, not just grouped in Langfuse. Since Milestone 8, the system prompt itself is fetched from Langfuse Prompt Management rather than hardcoded — see [Prompt Management](#prompt-management-m8) below. Since Milestone 9, a local deterministic evaluation harness (`make evaluate`) runs a 39-case dataset through this same agent — see "Evaluation Framework" below. Since Milestone 10, that same dataset can also be published to a real Langfuse Dataset and run as a named, comparable experiment (`make sync-eval-dataset`, `make experiment-prompt-v1`/`-v2`) — see "Langfuse Datasets and Experiments" below. See the [Trace Structure](#trace-structure) section for what a real request actually produces, and [Milestone Status](#milestone-status) for what's implemented per milestone.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -133,6 +133,18 @@ Three tools, described to the LLM via `tools/specs.py`'s `TOOL_SPECS` (JSON Sche
 
 **Honest limitation, printed directly in the report**: under the default `MockProvider`, most tool-usage/constraint/clarification checks fail — not because the agent is broken, but because Mock is a fixed keyword-trigger table (2 hardcoded behaviors, no real reasoning, never asks a clarifying question). The dataset's expectations describe what a *real* agent should do; a meaningful pass rate needs `LLM_PROVIDER=anthropic`. The evaluator *logic itself* is tested separately and offline against scripted fake providers with known behavior, not against Mock's real limitations — see `tests/unit/test_evaluators.py` and `test_evaluation_runner.py`.
 
+### Langfuse Datasets and Experiments (M10)
+
+Publishes the same `data/evaluation/cases.json` used by Milestone 9 into a real Langfuse Dataset, and runs it as a named, comparable experiment — using the SDK's own first-class `run_experiment()` API (`langfuse.experiment`), discovered and verified against the real local stack before designing around it, rather than hand-rolling dataset-item/trace/score linking.
+
+- **`evaluation/langfuse_sync.py`** — `sync_dataset()` (`make sync-eval-dataset`) creates/updates a Dataset named `travel-concierge-eval-cases`, one item per case, upserted by the case's own `id` (the SDK's documented dedup mechanism) — safe to re-run after editing `cases.json`. The local JSON file stays the source of truth; this only mirrors it, per the spec's own framing ("Langfuse is an execution/analysis layer, not the only source of truth for test cases").
+- **`evaluation/experiment.py`** — `run_named_experiment(run_name=...)` reuses Milestone 9's `run_case()` and all five evaluators completely unchanged, wrapped in two small adapters: one maps a dataset item's `input`/`expected_output`/`metadata` back to an `EvaluationCase`, the other maps an `EvaluatorResult` (pass/fail/skip) to the SDK's `Evaluation` shape (`1.0`/`0.0`/no evaluation at all, respectively) so Langfuse's own automatic score-averaging works correctly. Each item's task execution is traced and linked to the dataset run automatically by the SDK — nested tracing inside the task function composes correctly with that linking, the same "nesting is free" property established for spans since Milestone 4.
+- **The worked example**: `make experiment-prompt-v1` / `make experiment-prompt-v2` run the identical dataset with `PROMPT_LABEL` set to `production`/`staging` respectively, under two different `run_name`s on the same Langfuse dataset — exactly the spec's "Experiment A: Prompt v1 vs Prompt v2", comparable side by side via the printed `dataset_run_url`.
+
+**Deliberately not recomputing cost/token usage locally**: the spec asks to "Record: quality, latency, cost, token usage." Quality comes for free from the SDK's own per-evaluator averaging; cost and token usage are already captured natively per generation (unchanged since Milestone 2) and shown in Langfuse's own dataset-run comparison view — duplicating that arithmetic locally would need plumbing usage totals through `AgentState`, a change well beyond this milestone's actual scope (dataset sync + experiment running), and would directly contradict the spec's own "avoid manually duplicating functionality already handled correctly by the SDK." See [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-10--langfuse-datasets-and-experiments) for the full reasoning.
+
+**Testing**: dataset/experiment creation has no offline fallback (unlike Milestone 8's prompts) — the pure adapter logic is unit-tested offline (`tests/unit/test_experiment_adapters.py`), while the actual sync-and-run flow is a real integration test against a throwaway dataset (`tests/integration/test_langfuse_dataset_experiment.py`), matching the existing `test_langfuse_connectivity.py` precedent.
+
 ### Langfuse
 
 The observability backend. Receives structured trace data from the application. Provides the UI for trace inspection, prompt management, dataset management, evaluation, and experiments.
@@ -227,7 +239,8 @@ The synthetic travel dataset (`data/synthetic/*.json`) is not `Settings`-configu
 | M7        | Sessions and multi-turn analysis     | ✅ Complete |
 | M8        | Prompt management                    | ✅ Complete |
 | M9        | Evaluation framework                 | ✅ Complete |
-| M10       | Langfuse datasets and experiments    | ⬜ Next     |
+| M10       | Langfuse datasets and experiments    | ✅ Complete |
+| M11       | LLM-as-judge                         | ⬜ Next     |
 | …         | See PROJECT_SPEC.md for full list    |             |
 
 ## Architecture Decision Records
