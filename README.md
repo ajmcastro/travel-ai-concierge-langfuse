@@ -1,5 +1,11 @@
 # Travel AI Concierge — Langfuse Observability Lab
 
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-API-009688.svg)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Agent%20Orchestration-1C3C3C.svg)](https://www.langchain.com/langgraph)
+[![Langfuse](https://img.shields.io/badge/Langfuse-Observability-black.svg)](https://langfuse.com)
+[![Streamlit](https://img.shields.io/badge/Streamlit-Chat%20UI-FF4B4B.svg)](https://streamlit.io)
+
 Your agent works great in the demo. Then it's in production: a user got a weird recommendation, the OpenAI bill tripled overnight, or one specific conversation is slow and you don't know if it's the LLM, a tool call, or your own code. **How do you actually find out what happened?**
 
 This repo builds a real (if toy) agentic AI application — a travel concierge — and instruments it end-to-end with [Langfuse](https://langfuse.com) to answer exactly that question, milestone by milestone: tracing, sessions, token/cost/latency monitoring, prompt versioning, and offline/online evaluation including LLM-as-judge and regression detection. The travel domain is the vehicle; **AI observability and evaluation engineering is what you're here to learn.**
@@ -59,16 +65,20 @@ Each item below is built at a specific milestone (see the [Milestones](#mileston
 # 1. Install dependencies
 make install
 
-# 2. Create your local .env (fill in credentials after creating Langfuse project)
+# 2. Create your local .env (ships with working local-dev Langfuse credentials — no signup needed)
 make env
 
-# 3. Start the API
+# 3. Start Langfuse (self-hosted, local) — do this before the API below, or every
+#    /chat request pays a real ~2.5s penalty retrying against a host that isn't up yet
+make langfuse-up
+
+# 4. Start the API
 make serve
 
-# 4. Check it's running
+# 5. Check it's running
 make health
 
-# 5. Start the chat UI (in another terminal)
+# 6. Start the chat UI (in another terminal)
 make ui
 ```
 
