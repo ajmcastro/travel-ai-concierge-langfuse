@@ -44,7 +44,7 @@ attributes *after* creating some spans).
 | **Application version** | `release=` (set once, at client construction) | `Settings.app_version` | Which deployable build produced this trace |
 | **Agent version** | `version=` (per-trace, via `propagate_attributes`) | `Settings.agent_version`, only on the agent path | Which *agent graph/reasoning logic* produced this trace — independent of the app release, because the agent's decision logic can change without a full app deploy, or vice versa |
 | **Tags** | `tags=[...]` | `["agent"\|"direct-llm", f"provider:{llm_provider}"]` | Coarse, filterable segments — "show me every direct-llm trace this week" without opening any of them |
-| **Feature flags / metadata** | `metadata={...}` | `{"agent_enabled": ..., "llm_provider": ..., "history_turns": ...}` | Structured, queryable facts about *how* this specific request was handled — the boolean flags and config that changed its behavior. `history_turns` (Milestone 7) is a direct, per-trace answer to "did context size grow excessively" |
+| **Feature flags / metadata** | `metadata={...}` | `{"agent_enabled": ..., "llm_provider": ..., "history_turns": ..., "prompt_version": ..., "prompt_fallback": ...}` | Structured, queryable facts about *how* this specific request was handled — the boolean flags and config that changed its behavior. `history_turns` (Milestone 7) is a direct, per-trace answer to "did context size grow excessively"; `prompt_version`/`prompt_fallback` (Milestone 8) say which system prompt version answered this turn, and whether Langfuse was even reachable to serve it |
 
 Why `version` is separate from `release`: the SDK's own parameter docstring
 says it plainly — *"Version identifier for parts of your application that

@@ -1,13 +1,13 @@
 # Architecture — Travel AI Concierge
 
-> Last updated: Milestone 7  
+> Last updated: Milestone 8  
 > This document evolves with the project. Each milestone adds to it.
 
 ## Overview
 
 The Travel AI Concierge is an agentic AI application with comprehensive LLM observability via Langfuse. Its primary purpose is to demonstrate production-quality AI engineering practices using a realistic travel domain as the workload.
 
-As of Milestone 5, everything in the diagram below is real **except** the OpenAI provider and `build_itinerary` tool (shown for scale — future, unimplemented) and the Travel AI Search API integration (Milestone 18, optional). The Chat UI calls `POST /chat` over HTTP, which runs the LangGraph agent by default (`Settings.agent_enabled`, default `True`) — the agent decides whether to answer directly or call a tool, executes it if so, and loops back until it has a final answer. Since Milestone 7, each call also carries real conversation memory: prior turns in the same `session_id` are replayed into context, not just grouped in Langfuse. See the [Trace Structure](#trace-structure) section for what a real request actually produces, and [Milestone Status](#milestone-status) for what's implemented per milestone.
+As of Milestone 5, everything in the diagram below is real **except** the OpenAI provider and `build_itinerary` tool (shown for scale — future, unimplemented) and the Travel AI Search API integration (Milestone 18, optional). The Chat UI calls `POST /chat` over HTTP, which runs the LangGraph agent by default (`Settings.agent_enabled`, default `True`) — the agent decides whether to answer directly or call a tool, executes it if so, and loops back until it has a final answer. Since Milestone 7, each call also carries real conversation memory: prior turns in the same `session_id` are replayed into context, not just grouped in Langfuse. Since Milestone 8, the system prompt itself is fetched from Langfuse Prompt Management rather than hardcoded — see [Prompt Management](#prompt-management-m8) below. See the [Trace Structure](#trace-structure) section for what a real request actually produces, and [Milestone Status](#milestone-status) for what's implemented per milestone.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -72,16 +72,25 @@ Streamlit app (`ui/streamlit_app.py`), a separate process that talks to FastAPI 
 - Feedback placeholders (`st.feedback`) — visible, but not yet sent to Langfuse (Milestone 12)
 - Clean error display when the API is unreachable or returns an error, and when the debug panel's Langfuse trace-link lookup fails (unreachable host, bad credentials, timeout — caught broadly since this is a non-critical convenience, not the core chat feature)
 
-### FastAPI ✅ Implemented (M0, M2, M5, M6, M7)
+### FastAPI ✅ Implemented (M0, M2, M5, M6, M7, M8)
 
 The HTTP boundary. Accepts chat requests, manages session IDs, and returns responses. Does not contain agent logic itself — it delegates. Responsible for:
 - Validating request schemas (Pydantic) — `api/schemas/chat.py`
 - Opening the root Langfuse trace per request and setting session/user/environment/tags/metadata/version attribution — `api/routes/chat.py` (M6 adds tags, metadata, and the `agent_version` axis; see [TRACE_DESIGN.md](TRACE_DESIGN.md))
 - Fetching prior turns from the conversation store and replaying them ahead of the current message before calling the agent/provider, then persisting the new turn on success (M7 — see "Conversation Memory" below)
+- Fetching the system prompt from Langfuse Prompt Management before building `messages`, and linking it to the turn's generation(s) (M8 — see [Prompt Management](#prompt-management-m8) below)
 - Delegating to the agent graph by default (`Settings.agent_enabled`, M5), or the LLM provider directly when `agent_enabled=False` (the M2 shape, kept as a live comparison point rather than deleted)
 - Recording `level="ERROR"`/`status_message` on the root trace if the turn raises, before re-raising (M6)
 - Returning trace IDs, but only when `Settings.debug` is true
 - `GET /sessions/{session_id}` — returns this app's own stored turn history for a session, 404 if none exists (M7)
+
+### Prompt Management (M8)
+
+`src/travel_ai_concierge/prompts.py`'s `get_system_prompt()` fetches the system prompt from Langfuse Prompt Management by name (`travel-concierge-system`) and label (`Settings.prompt_label`, default `"production"`), instead of a hardcoded string. Two versions are seeded by `scripts/seed_prompts.py` (`make seed-prompts`): v1 labeled `production` (the original Milestone 2 text, encourages tool use), v2 labeled `staging` (a more directive version that requires tool use for destination/hotel facts). Flipping `PROMPT_LABEL=staging` switches `/chat` to v2 with no code change — the same "flip a setting" pattern `agent_enabled`/`llm_provider` already use.
+
+**Local fallback, not a hard dependency**: `get_system_prompt()` passes `fallback=SYSTEM_PROMPT_FALLBACK` to the SDK's `get_prompt()` — if Langfuse is unreachable, or the prompt hasn't been seeded yet, the call never raises; it returns a synthetic `PromptClient` (`.is_fallback=True`) carrying the same text as v1. This is the milestone spec's explicit requirement ("do not make the application unable to start if remote prompt retrieval fails"), verified directly in `tests/unit/test_prompts.py` against a real (non-mocked) `Langfuse` client pointed at an intentionally-unreachable host.
+
+**Prompt linking**: `chat.py` passes the fetched prompt to `propagate_attributes(prompt=prompt)`, which the Langfuse backend uses to link every generation in that turn to the exact prompt version that produced it — real Langfuse prompt-usage analytics, not a custom field. One real, non-obvious behavior confirmed by reading the SDK's own propagation source: **fallback prompts are never linked** — when Langfuse is down, the turn still completes correctly, it just has nothing to link to (since a fallback isn't a real served version). `prompt_version`/`prompt_fallback` are also added to trace metadata directly, so this is visible without opening the prompt link.
 
 ### Conversation Memory ✅ Implemented (M7)
 
@@ -127,14 +136,17 @@ Since Milestone 7, `metadata.history_turns` also records how many prior
 turns were replayed into this specific trace's context — the direct,
 per-trace answer to "did context size grow excessively," without needing a
 custom cost/token dashboard (Langfuse's own per-session aggregation already
-covers that; see [TRACE_DESIGN.md](TRACE_DESIGN.md)).
+covers that; see [TRACE_DESIGN.md](TRACE_DESIGN.md)). Since Milestone 8,
+every trace also carries `metadata.prompt_version`/`metadata.prompt_fallback`,
+and — when a real (non-fallback) prompt was used — the turn's generation(s)
+are linked to that exact prompt version via `propagate_attributes(prompt=...)`.
 
 **What `POST /chat` produces today when no tool is needed** (`agent_enabled=True`, the default — same shape whether the model answers directly or is asked something it doesn't need a tool for):
 
 ```
-travel_concierge_turn  (trace — session_id, user_id, environment, tags, metadata, agent_version via propagate_attributes)
+travel_concierge_turn  (trace — session_id, user_id, environment, tags, metadata, agent_version, prompt link via propagate_attributes)
 └─ agent                (agent observation, iteration 0)
-   └─ llm_call          (generation: model, tokens, latency)
+   └─ llm_call          (generation: model, tokens, latency — linked to the prompt version, unless it was a fallback)
 ```
 
 **What it produces when the model requests a tool** — verified live via `POST /chat` with `"find me a hotel"`, exactly this shape in the Langfuse UI, not just asserted in tests:
@@ -187,6 +199,8 @@ The synthetic travel dataset (`data/synthetic/*.json`) is not `Settings`-configu
 
 `Settings.max_history_turns` (default `10`) bounds how many prior turns Milestone 7's conversation store replays into context per `/chat` call — the oldest turns are trimmed first once a session exceeds this. This is app-level state, in-memory and per-process (not backed by Redis/Postgres) — see "Conversation Memory" above for why that's a deliberate choice for this project rather than a shortcut.
 
+`Settings.prompt_label` (default `"production"`) and `Settings.prompt_cache_ttl_seconds` (default `60`) control Milestone 8's Prompt Management fetch — see [Prompt Management](#prompt-management-m8) above and `docs/RATIONALE_PER_MILESTONE.md` for why `prompt_label`, not a second hardcoded prompt string, is the v1-vs-v2 comparison mechanism.
+
 ## Milestone Status
 
 | Milestone | Description                         | Status      |
@@ -199,7 +213,8 @@ The synthetic travel dataset (`data/synthetic/*.json`) is not `Settings`-configu
 | M5        | LangGraph agent workflow             | ✅ Complete |
 | M6        | Production-like trace design         | ✅ Complete |
 | M7        | Sessions and multi-turn analysis     | ✅ Complete |
-| M8        | Prompt management                    | ⬜ Next     |
+| M8        | Prompt management                    | ✅ Complete |
+| M9        | Evaluation framework                 | ⬜ Next     |
 | …         | See PROJECT_SPEC.md for full list    |             |
 
 ## Architecture Decision Records

@@ -5,6 +5,7 @@
         test test-unit test-integration \
         lint format format-check typecheck check \
         generate-data tools-smoke-test evaluate eval-ci \
+        seed-prompts prompts-smoke-test \
         clean
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -114,6 +115,14 @@ evaluate:  ## Run the evaluation suite
 
 eval-ci:  ## Run evaluation and exit non-zero on regression
 	uv run python scripts/run_evaluation.py --ci
+
+# ── Prompt management (Milestone 8) ──────────────────────────────────────────
+
+seed-prompts:  ## Create/update system prompt v1 (production) + v2 (staging) in Langfuse
+	uv run python scripts/seed_prompts.py
+
+prompts-smoke-test:  ## Compare prompt v1 vs v2 (no server needed; run `make seed-prompts` first)
+	uv run python scripts/smoke_test_prompts.py
 
 # ── Housekeeping ──────────────────────────────────────────────────────────────
 

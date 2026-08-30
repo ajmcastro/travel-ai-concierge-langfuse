@@ -15,7 +15,25 @@ from travel_ai_concierge.api.app import create_app
 from travel_ai_concierge.config import get_settings
 from travel_ai_concierge.conversation import get_conversation_store
 from travel_ai_concierge.observability import get_langfuse_client
+from travel_ai_concierge.prompts import SYSTEM_PROMPT_FALLBACK
 from travel_ai_concierge.providers.llm import get_llm_provider
+
+
+class _StubPrompt:
+    """Stands in for a fetched Langfuse PromptClient — no real one is fetched
+    in these tests (see tests/unit/test_prompts.py for that, offline via an
+    intentionally-unreachable host). `get_system_prompt()` makes a real,
+    blocking network call on cache miss; every test in this file would
+    otherwise depend on live Langfuse infrastructure, which the "unit tests
+    must be offline" rule (CLAUDE.md) explicitly forbids.
+    """
+
+    name = "travel-concierge-system"
+    version = 1
+    is_fallback = False
+
+    def compile(self, **kwargs: object) -> str:
+        return SYSTEM_PROMPT_FALLBACK
 
 
 def _clear_all_caches() -> None:
@@ -42,6 +60,9 @@ def _clear_caches():
 
 def _client(monkeypatch: pytest.MonkeyPatch, **env: str) -> TestClient:
     monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setattr(
+        "travel_ai_concierge.api.routes.chat.get_system_prompt", lambda: _StubPrompt()
+    )
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     return TestClient(create_app())
@@ -212,3 +233,15 @@ def test_failed_turn_is_not_remembered(monkeypatch: pytest.MonkeyPatch):
     second = client.post("/chat", json={"message": "hello", "session_id": "s1"}).json()
     # Still [system, user] — the failed first attempt left no trace in history.
     assert second["message"] == "msg_count=2"
+
+
+def test_system_message_uses_the_fetched_prompts_compiled_content(monkeypatch: pytest.MonkeyPatch):
+    provider = RecordingProvider()
+    monkeypatch.setattr("travel_ai_concierge.api.routes.chat.get_llm_provider", lambda: provider)
+    client = _client(monkeypatch, AGENT_ENABLED="false")
+
+    client.post("/chat", json={"message": "hello", "session_id": "s1"})
+
+    system_message = provider.calls[0][0]
+    assert system_message.role == "system"
+    assert system_message.content == SYSTEM_PROMPT_FALLBACK

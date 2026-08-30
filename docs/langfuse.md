@@ -122,6 +122,6 @@ docker compose down -v      # stop containers AND delete all data
 
 ## What's deliberately not covered here
 
-- Prompt management, datasets, evaluations, experiments — later milestones (M8–M11)
+- Datasets, evaluations, experiments — later milestones (M9–M11). Prompt management is covered as of Milestone 8 — see [docs/architecture.md](architecture.md#prompt-management-m8).
 - Production security hardening, TLS, multi-tenant auth — out of scope for a local educational stack (see ADR-004's discussion of the local/Cloud split)
 - Switching to Langfuse Cloud — see `.env.example` and ADR-004; no code changes are required, only the three `LANGFUSE_*` values

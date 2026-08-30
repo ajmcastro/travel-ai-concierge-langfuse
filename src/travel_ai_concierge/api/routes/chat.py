@@ -8,16 +8,10 @@ from travel_ai_concierge.api.schemas.chat import ChatRequest, ChatResponse
 from travel_ai_concierge.config import get_settings
 from travel_ai_concierge.conversation import Turn, get_conversation_store
 from travel_ai_concierge.observability import get_langfuse_client
+from travel_ai_concierge.prompts import get_system_prompt
 from travel_ai_concierge.providers.llm import Message, get_llm_provider
 
 router = APIRouter(tags=["chat"])
-
-SYSTEM_PROMPT = (
-    "You are a helpful, concise travel concierge. Ask clarifying questions when "
-    "important details (destination, dates, budget, travellers) are missing. Use "
-    "the available tools to look up real destination and hotel information rather "
-    "than guessing."
-)
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -26,6 +20,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     client = get_langfuse_client()
     provider = get_llm_provider()
     store = get_conversation_store()
+    prompt = get_system_prompt()
 
     session_id = request.session_id or f"session-{uuid.uuid4().hex[:12]}"
     history = await store.get_history(session_id)
@@ -57,12 +52,24 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 # grow excessively" — filterable/sortable per trace without
                 # opening it, independent of Langfuse's own token counts.
                 "history_turns": len(history),
+                # Milestone 8: visible without opening the linked prompt —
+                # which version answered this turn, and whether Langfuse was
+                # even reachable to serve it.
+                "prompt_version": prompt.version,
+                "prompt_fallback": prompt.is_fallback,
             },
             # Only the agent path has an agent version to report; the direct
             # path (AGENT_ENABLED=false) isn't running agent code at all.
             version=settings.agent_version if settings.agent_enabled else None,
+            # Milestone 8: links this turn's generation(s) to the exact
+            # prompt version that produced them — Langfuse's own prompt
+            # usage analytics, not a custom field we're inventing. No-ops
+            # silently when `prompt.is_fallback` is True (verified against
+            # the SDK source, tests/unit/test_prompts.py) — a fallback isn't
+            # a real served version, so there's nothing to link.
+            prompt=prompt,
         ):
-            messages = [Message(role="system", content=SYSTEM_PROMPT)]
+            messages = [Message(role="system", content=prompt.compile())]
             for turn in history:
                 messages.append(Message(role="user", content=turn.user_message))
                 messages.append(Message(role="assistant", content=turn.assistant_message))

@@ -8,7 +8,20 @@ from travel_ai_concierge.api.app import create_app
 from travel_ai_concierge.config import get_settings
 from travel_ai_concierge.conversation import get_conversation_store
 from travel_ai_concierge.observability import get_langfuse_client
+from travel_ai_concierge.prompts import SYSTEM_PROMPT_FALLBACK
 from travel_ai_concierge.providers.llm import get_llm_provider
+
+
+class _StubPrompt:
+    # See tests/unit/test_chat_route.py's copy for why this exists — keeps
+    # every test in this file off the network (get_system_prompt() would
+    # otherwise make a real, blocking Langfuse call on cache miss).
+    name = "travel-concierge-system"
+    version = 1
+    is_fallback = False
+
+    def compile(self, **kwargs: object) -> str:
+        return SYSTEM_PROMPT_FALLBACK
 
 
 def _clear_all_caches() -> None:
@@ -29,6 +42,9 @@ def _clear_caches():
 def _client(monkeypatch: pytest.MonkeyPatch, **env: str) -> TestClient:
     monkeypatch.setenv("LLM_PROVIDER", "mock")
     monkeypatch.setenv("AGENT_ENABLED", "false")
+    monkeypatch.setattr(
+        "travel_ai_concierge.api.routes.chat.get_system_prompt", lambda: _StubPrompt()
+    )
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     return TestClient(create_app())

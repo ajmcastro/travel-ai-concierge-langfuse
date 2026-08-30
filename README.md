@@ -6,7 +6,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M7 — Sessions and multi-turn analysis ([progress table](#milestones))  
+> **Current milestone:** M8 — Prompt management ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -131,6 +131,8 @@ Pass the same `session_id` across requests to group them into one conversation *
 
 Since Milestone 6, every trace also carries `tags` (`agent`/`direct-llm`, `provider:<name>`), structured `metadata` (`agent_enabled`, `llm_provider`), and — on the agent path — its own `agent_version`, independent of `app_version`. If a tool call fails or the turn raises, the relevant observation is marked `level="ERROR"` with a `status_message` instead of the failure being visible only as text. Full taxonomy and a real good-vs-poor example: [docs/TRACE_DESIGN.md](docs/TRACE_DESIGN.md).
 
+Since Milestone 8, the system prompt itself comes from [Langfuse Prompt Management](#prompt-management), not a hardcoded string — see below.
+
 With `DEBUG=true` (the `.env.example` default), the response includes a `trace_id` you can open directly in the Langfuse UI. Switch to the real model:
 
 ```env
@@ -156,6 +158,21 @@ curl -s http://localhost:8000/sessions/<session_id> | python3 -m json.tool
 ```
 
 Returns this app's own record of that session's turns (404 if none exist yet) — `trace_id` per turn only in `DEBUG=true`, same convention as `/chat`'s own response. This is a different thing from Langfuse's own Session view, which already aggregates cost/latency/token totals per `session_id` natively — this endpoint answers "what did this session actually say," not "how much did it cost" (see [docs/TRACE_DESIGN.md](docs/TRACE_DESIGN.md)).
+
+---
+
+## Prompt Management
+
+```bash
+make seed-prompts        # create/update v1 (production) + v2 (staging) in Langfuse
+make prompts-smoke-test  # fetch both, compare — no server needed
+```
+
+Since Milestone 8, the system prompt is a named, versioned, labeled prompt in Langfuse Prompt Management (`travel-concierge-system`), not a hardcoded string. `/chat` fetches it by label (`PROMPT_LABEL`, default `production` → v1); flip to `PROMPT_LABEL=staging` to run v2 — a more directive version that requires tool use for destination/hotel facts instead of just encouraging it — with no code change.
+
+**Never a hard dependency**: if Langfuse is unreachable, or you haven't run `make seed-prompts` yet, `/chat` still works — it falls back to the same text as v1, held locally in code (`Settings`-independent, always available). This is directly tested (`tests/unit/test_prompts.py`) against an intentionally-unreachable host, not just asserted.
+
+Every trace records which prompt version answered it (`metadata.prompt_version`, `metadata.prompt_fallback`) and — for a real, non-fallback prompt — links the generation to that exact version in Langfuse's own prompt-usage view. Comparing v1 vs. v2 for actual quality (not just mechanism) needs a real provider and a real evaluation dataset, which is Milestone 9's job, not this one's — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-8--prompt-management) for why this milestone deliberately stops short of declaring a winner.
 
 ---
 
@@ -222,6 +239,7 @@ src/travel_ai_concierge/
 ├── agent/           — LangGraph agent/tools loop ✅ (Milestone 5): state, nodes, graph
 ├── providers/llm/   — LLM provider abstraction ✅ (Milestone 2, tool-calling added M5): Mock, Anthropic
 ├── conversation/    — In-memory per-session conversation store ✅ (Milestone 7)
+├── prompts.py       — Langfuse Prompt Management fetch + local fallback ✅ (Milestone 8)
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
 ├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5)
@@ -263,7 +281,7 @@ data/
 | M5 | LangGraph agent workflow ✅ |
 | M6 | Production-like trace design ✅ |
 | M7 | Sessions and multi-turn analysis ✅ |
-| M8 | Prompt management |
+| M8 | Prompt management ✅ |
 | M9 | Evaluation framework |
 | M10–M21 | Datasets, experiments, LLM-as-judge, regression… |
 

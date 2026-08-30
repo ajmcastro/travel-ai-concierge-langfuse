@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     # is exactly that failure mode, not just a cost concern.
     max_history_turns: int = 10
 
+    # Milestone 8: Langfuse Prompt Management. `prompt_label` is the whole
+    # v1-vs-v2 comparison mechanism — flip to "staging" to run the other
+    # seeded version with no code change. `prompt_cache_ttl_seconds` matches
+    # the SDK's own default (60s); explicit here so it's a documented,
+    # tunable knob rather than a value only visible by reading the SDK source.
+    prompt_label: str = "production"
+    prompt_cache_ttl_seconds: int = 60
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
