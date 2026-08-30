@@ -57,11 +57,13 @@ travel_concierge_turn (trace)
 
 > Updated post-Milestone 4: the tools ended up using Langfuse's first-class `tool` observation type rather than a `tool.`-prefixed span name — a real distinct type, not just a naming convention (see [RATIONALE_PER_MILESTONE.md](../RATIONALE_PER_MILESTONE.md#milestone-4--synthetic-travel-tools)). The diagram above reflects that; it was written before that detail was known.
 
+> Updated post-Milestone 5: the actual graph has two nodes, not five — `agent` (one LLM call, tools offered) and `tools` (executes whatever the agent requested), looping `agent → tools → agent` until the model answers with no further tool calls. "Understand request," "clarify," and "select tool(s)" collapsed into the single `agent` node: one LLM call with tools available already produces all three behaviors (a plain-text answer, a clarifying question, or a tool request) as the model's own choice of output, rather than needing separate dedicated steps for each. See [RATIONALE_PER_MILESTONE.md](../RATIONALE_PER_MILESTONE.md#milestone-5--explicit-agentic-ai-workflow) for the full reasoning and [docs/architecture.md](../architecture.md#trace-structure) for the real trace shapes. The diagram above is the original planning sketch, kept for history — not what got built.
+
 We will NOT use prebuilt LangGraph agents. Every node is a named Python function we write. The graph is declared explicitly and documented.
 
 ## Consequences
 
-- `langgraph` is added as a dependency in Milestone 5.
-- Tool functions are plain Python; LangGraph only provides the execution graph.
-- Langfuse spans are opened/closed at node boundaries (not inside the LangGraph internals).
-- If LangGraph introduces behaviour that makes Langfuse instrumentation difficult, we reassess.
+- `langgraph` is added as a dependency in Milestone 5. ✅
+- Tool functions are plain Python; LangGraph only provides the execution graph. ✅
+- Langfuse spans are opened/closed at node boundaries (not inside the LangGraph internals). ✅ — `agent`/`execute_tools` in `agent/nodes.py`
+- If LangGraph introduces behaviour that makes Langfuse instrumentation difficult, we reassess. Not needed — nesting worked via plain OTel context propagation with no LangGraph-specific instrumentation hooks at all.

@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter
 from langfuse import propagate_attributes
 
+from travel_ai_concierge.agent import get_agent_graph
 from travel_ai_concierge.api.schemas.chat import ChatRequest, ChatResponse
 from travel_ai_concierge.config import get_settings
 from travel_ai_concierge.observability import get_langfuse_client
@@ -12,7 +13,9 @@ router = APIRouter(tags=["chat"])
 
 SYSTEM_PROMPT = (
     "You are a helpful, concise travel concierge. Ask clarifying questions when "
-    "important details (destination, dates, budget, travellers) are missing."
+    "important details (destination, dates, budget, travellers) are missing. Use "
+    "the available tools to look up real destination and hotel information rather "
+    "than guessing."
 )
 
 
@@ -41,9 +44,20 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 Message(role="system", content=SYSTEM_PROMPT),
                 Message(role="user", content=request.message),
             ]
-            response = await provider.complete(messages)
 
-        root_span.update(output={"message": response.content})
+            if settings.agent_enabled:
+                # Milestone 5: the LangGraph agent/tools loop. Flip
+                # AGENT_ENABLED=false to compare against the Milestone 2
+                # direct-call trace shape on the same endpoint, same provider.
+                graph = get_agent_graph()
+                result = await graph.ainvoke({"messages": messages, "iterations": 0})
+                final_message = result["messages"][-1]
+                content = final_message.content
+            else:
+                response = await provider.complete(messages)
+                content = response.content
+
+        root_span.update(output={"message": content})
 
     if settings.debug:
         # Spans batch and export asynchronously; a request in a short-lived
@@ -54,7 +68,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     return ChatResponse(
         session_id=session_id,
-        message=response.content,
+        message=content,
         trace_id=trace_id if settings.debug else None,
-        metadata={"model": response.model},
+        metadata={"model": provider.model},
     )

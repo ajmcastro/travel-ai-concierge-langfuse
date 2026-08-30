@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install env serve health chat-smoke-test ui \
+.PHONY: help install env serve health chat-smoke-test agent-smoke-test ui \
         langfuse-up langfuse-down langfuse-logs langfuse-smoke-test \
         up down restart logs \
         test test-unit test-integration \
@@ -36,6 +36,9 @@ health:  ## Check /health endpoint (requires server running)
 
 chat-smoke-test:  ## Call POST /chat over real HTTP and print the response (requires `make serve`)
 	uv run python scripts/smoke_test_chat.py
+
+agent-smoke-test:  ## Compare "simple chatbot" vs "tool-using agent" traces (no server needed)
+	uv run python scripts/smoke_test_agent.py
 
 ui:  ## Start the Streamlit chat UI (requires `make serve` running separately)
 	uv run streamlit run ui/streamlit_app.py

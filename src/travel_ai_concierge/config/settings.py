@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 30.0
     anthropic_api_key: str = ""
 
+    # Agent (Milestone 5) — flip to False to make /chat behave exactly like
+    # Milestone 2 (direct provider call, no tools, no graph). This is the
+    # one-line comparison the milestone spec asks for: "simple chatbot" vs.
+    # "tool-using agent" traces, same endpoint, same provider config.
+    agent_enabled: bool = True
+    agent_max_iterations: int = 5
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

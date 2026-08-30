@@ -49,3 +49,4 @@ The Langfuse instrumentation (`langfuse.generation(...)`) happens inside `Anthro
 - `OpenAIProvider` can be added later with the same interface.
 - The Protocol is defined in `src/travel_ai_concierge/providers/llm/base.py` (Milestone 2).
 - Model IDs, temperature, and timeouts come from `Settings` — never hardcoded.
+- **Milestone 5**: the sketched `**kwargs` became a concrete `tools: list[ToolSpec] | None = None` parameter, and `LLMResponse` gained `tool_calls`. The instrumentation-lives-inside-the-provider decision paid off directly here — `AnthropicProvider` translates our provider-agnostic tool/message shapes into Anthropic's actual API shapes internally (verified via SDK introspection), and that translation logic is exactly as visible and unit-testable as the rest of the provider, not hidden behind the Protocol.

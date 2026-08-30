@@ -1,13 +1,13 @@
 # Architecture — Travel AI Concierge
 
-> Last updated: Milestone 4  
+> Last updated: Milestone 5  
 > This document evolves with the project. Each milestone adds to it.
 
 ## Overview
 
 The Travel AI Concierge is an agentic AI application with comprehensive LLM observability via Langfuse. Its primary purpose is to demonstrate production-quality AI engineering practices using a realistic travel domain as the workload.
 
-The diagram below is the **target architecture** — what this system looks like once the LangGraph agent (M5) exists and calls the travel tools (M4, built but not yet wired to anything — see [Milestone Status](#milestone-status)). As of Milestone 4, the top two boxes, the LLM Provider, and the Travel Tools box are real, but not yet connected to each other: the Chat UI calls `POST /chat` over HTTP, which calls a provider directly; the tools are independently callable and tested but nothing calls them from a request yet. See the [Trace Structure](#trace-structure) section for the current (simpler) trace shape a real request produces right now.
+As of Milestone 5, everything in the diagram below is real **except** the OpenAI provider and `build_itinerary` tool (shown for scale — future, unimplemented) and the Travel AI Search API integration (Milestone 18, optional). The Chat UI calls `POST /chat` over HTTP, which runs the LangGraph agent by default (`Settings.agent_enabled`, default `True`) — the agent decides whether to answer directly or call a tool, executes it if so, and loops back until it has a final answer. See the [Trace Structure](#trace-structure) section for what a real request actually produces, and [Milestone Status](#milestone-status) for what's implemented per milestone.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -23,14 +23,13 @@ The diagram below is the **target architecture** — what this system looks like
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              Travel AI Concierge Agent                      │
-│                   (LangGraph graph)                         │
+│                  Travel AI Concierge Agent                  │
+│               (LangGraph: agent ↔ tools loop)               │
 │                                                             │
-│  understand_request ──→ clarify? ──yes──→ ask_user          │
-│         │                                                   │
-│        no                                                   │
-│         ▼                                                   │
-│  select_tools ──→ execute_tools ──→ generate_response       │
+│             agent ──tool call──▶ execute_tools              │
+│                 ▲                         │                 │
+│                 └─────────────────────────┘                 │
+│                 no tool call ▶ final answer                 │
 └─────┬───────────────────────────────────┬───────────────────┘
       │                                   │
       ▼                                   ▼
@@ -73,27 +72,31 @@ Streamlit app (`ui/streamlit_app.py`), a separate process that talks to FastAPI 
 - Feedback placeholders (`st.feedback`) — visible, but not yet sent to Langfuse (Milestone 12)
 - Clean error display when the API is unreachable or returns an error, and when the debug panel's Langfuse trace-link lookup fails (unreachable host, bad credentials, timeout — caught broadly since this is a non-critical convenience, not the core chat feature)
 
-### FastAPI ✅ Implemented (M0, M2)
+### FastAPI ✅ Implemented (M0, M2, M5)
 
-The HTTP boundary. Accepts chat requests, manages session IDs, and returns responses. Does not contain agent logic. Responsible for:
+The HTTP boundary. Accepts chat requests, manages session IDs, and returns responses. Does not contain agent logic itself — it delegates. Responsible for:
 - Validating request schemas (Pydantic) — `api/schemas/chat.py`
 - Opening the root Langfuse trace per request and setting session/user/environment attribution — `api/routes/chat.py`
-- Delegating to the LLM provider directly (M2); will delegate to the agent graph instead from M5
+- Delegating to the agent graph by default (`Settings.agent_enabled`, M5), or the LLM provider directly when `agent_enabled=False` (the M2 shape, kept as a live comparison point rather than deleted)
 - Returning trace IDs, but only when `Settings.debug` is true
 
-### Travel AI Concierge Agent — Planned (M5)
+### Travel AI Concierge Agent ✅ Implemented (M5)
 
-The LangGraph graph. Defines the agent's reasoning workflow as explicit nodes and conditional edges. Each node is a named Python function. The graph is declared once and can be visualised. Not built yet — `POST /chat` calls the LLM provider directly for now.
+A hand-written LangGraph graph (`agent/graph.py`) — no `langgraph.prebuilt` agent, per [ADR-001](decisions/ADR-001-agent-framework.md). Two nodes:
+- **`agent`** (`agent/nodes.py`) — one LLM call with the travel tools offered. Opens a real Langfuse **`agent`** observation (a distinct type, like `tool` in M4). If the model requests a tool, routes to `tools`; otherwise the graph ends.
+- **`tools`** — executes every tool call the last `agent` message requested, wrapped in one `execute_tools` span so multiple calls in one turn nest together; each individual call is still its own `tool` observation underneath (M4, unchanged).
 
-### LLM Provider ✅ Implemented (M2)
+Two independent safeguards against an unbounded loop (`Settings.agent_max_iterations`, default 5): the `agent` node withholds tools once about to make the last allowed call (so a well-behaved provider produces a clean final answer, not an empty-content dead end), and routing separately hard-stops regardless of the last message's content (so a provider that ignores having no tools still can't loop forever). See [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-5--explicit-agentic-ai-workflow) for the off-by-one bug this design went through before it was correct.
 
-A Protocol (`providers/llm/base.py`) with two concrete implementations: `MockProvider` (deterministic, offline) and `AnthropicProvider` (real, wraps the Anthropic Messages API). Both record their own Langfuse `generation` for every call — same span name and shape regardless of which is configured (`LLM_PROVIDER` in `.env`), capturing model, tokens, and cost details. `get_llm_provider()` selects between them from `Settings`.
+### LLM Provider ✅ Implemented (M2, extended M5)
 
-### Travel Tools ✅ Implemented, not yet connected (M4)
+A Protocol (`providers/llm/base.py`) with two concrete implementations: `MockProvider` (deterministic, offline) and `AnthropicProvider` (real, wraps the Anthropic Messages API). Both record their own Langfuse `generation` for every call — same span name and shape regardless of which is configured (`LLM_PROVIDER` in `.env`), capturing model, tokens, and cost details. `get_llm_provider()` selects between them from `Settings`. Since M5, `complete()` accepts an optional `tools` parameter and `LLMResponse` may carry `tool_calls` — `AnthropicProvider` translates these to/from Anthropic's actual tool-calling shapes (verified via SDK introspection, not assumed); `MockProvider` uses a small fixed keyword-trigger table as a deterministic stand-in for real tool selection.
 
-Plain, synchronous, typed Python functions (`tools/travel_tools.py`) backed by a small hand-authored synthetic dataset (`data/synthetic/`: 8 destinations, 18 hotels) generated by `scripts/generate_data.py`. Each call opens a real Langfuse **`tool`** observation — a distinct type from `span`/`generation`, with its own UI filter facet — capturing input parameters and a result summary (e.g. `result_count`). Called standalone today (via `make tools-smoke-test`, or directly in tests); nothing in `/chat` or the LLM provider calls them yet. That wiring — an LLM actually choosing to call a tool — is Milestone 5's job; see [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-4--synthetic-travel-tools) for why this boundary was drawn here rather than in M4.
+### Travel Tools ✅ Implemented and connected (M4, wired M5)
 
-Three tools:
+Plain, synchronous, typed Python functions (`tools/travel_tools.py`) backed by a small hand-authored synthetic dataset (`data/synthetic/`: 8 destinations, 18 hotels) generated by `scripts/generate_data.py`. Each call opens a real Langfuse **`tool`** observation — a distinct type from `span`/`generation`, with its own UI filter facet — capturing input parameters and a result summary (e.g. `result_count`). Callable standalone (`make tools-smoke-test`) or, since M5, from within the agent's `tools` node — the same code, unchanged, nests correctly under whichever trace is active either way.
+
+Three tools, described to the LLM via `tools/specs.py`'s `TOOL_SPECS` (JSON Schema, matching Anthropic's `tools` parameter format directly):
 - `search_destinations(tags, climate, limit)` — filters by tag overlap and/or exact climate match
 - `search_hotels(destination_id, family_friendly, max_price_band, limit)` — scoped to one destination, filtered by family fit and a price-band ceiling (`budget ≤ mid ≤ luxury`)
 - `get_destination_information(destination_id)` — single-record lookup, `None` if not found
@@ -104,34 +107,38 @@ The observability backend. Receives structured trace data from the application. 
 
 ## Trace Structure
 
-One API request → one top-level Langfuse trace. **What `POST /chat` actually produces today (M2)**:
+One API request → one top-level Langfuse trace. **What `POST /chat` produces today when no tool is needed** (`agent_enabled=True`, the default — same shape whether the model answers directly or is asked something it doesn't need a tool for):
 
 ```
 travel_concierge_turn  (trace — session_id, user_id, environment via propagate_attributes)
-└─ llm_call             (generation: model, tokens, latency — MockProvider or AnthropicProvider)
+└─ agent                (agent observation, iteration 0)
+   └─ llm_call          (generation: model, tokens, latency)
 ```
 
-**What a standalone tool call produces today (M4)** — no parent trace exists, so each becomes its own root trace, named after the tool:
+**What it produces when the model requests a tool** — verified live via `POST /chat` with `"find me a hotel"`, exactly this shape in the Langfuse UI, not just asserted in tests:
 
 ```
-search_hotels  (trace — this IS the tool call, not nested under anything yet)
+travel_concierge_turn        (trace)
+├─ agent                     (agent, iteration 0 — requests a tool)
+│  └─ llm_call               (generation)
+├─ execute_tools             (span — groups every tool call from this turn)
+│  └─ search_hotels          (tool: input params, result count)
+└─ agent                     (agent, iteration 1 — final answer)
+   └─ llm_call               (generation)
 ```
 
-This is the tools' true current call shape: `make tools-smoke-test` or any test calling `search_hotels(...)` directly produces exactly this. The moment something calls these tools from inside an active `travel_concierge_turn` trace (Milestone 5), the identical code nests automatically via OTel context propagation — no code change to the tools themselves.
+The loop continues (another `execute_tools` + `agent` pair) if the model requests another tool from the result, up to `Settings.agent_max_iterations` (default 5) — see [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-5--explicit-agentic-ai-workflow) for what happens at that limit.
 
-**Target shape once the agent graph exists and calls the tools (M5)** — each node below becomes a real span once it exists, not before:
+**With `AGENT_ENABLED=false`** — the Milestone 2 shape, kept as a live comparison point rather than removed:
 
 ```
 travel_concierge_turn  (trace)
-├─ understand_request   (span)
-│  └─ llm_call          (generation: model, tokens, latency)
-├─ select_tools         (span)
-├─ execute_tools        (span)
-│  ├─ search_destinations  (tool: input params, result count — implemented, M4)
-│  └─ search_hotels        (tool: input params, result count — implemented, M4)
-└─ generate_response    (span)
-   └─ llm_call          (generation: model, tokens, latency)
+└─ llm_call             (generation — no `agent` span, no tools offered at all)
 ```
+
+`scripts/smoke_test_agent.py` (`make agent-smoke-test`) produces both of the first two shapes in one run, for exactly this comparison, without needing to restart the server with a different `AGENT_ENABLED` value.
+
+A standalone tool call (`make tools-smoke-test`, or a test calling `search_hotels(...)` directly) still produces its own single-node root trace, unnested — the same code the agent's `tools` node calls, just with no parent trace active. Confirmed unchanged since Milestone 4.
 
 ## Configuration
 
@@ -150,6 +157,8 @@ The UI reaches the API via `Settings.api_base_url` (`API_BASE_URL` in `.env`) �
 
 The synthetic travel dataset (`data/synthetic/*.json`) is not `Settings`-configurable — its path is resolved relative to the `tools/data.py` module's own location, since it's a fixed part of this repository rather than an environment-specific value. Regenerate it with `make generate-data` after editing `scripts/generate_data.py`.
 
+`Settings.agent_enabled` (default `True`) and `Settings.agent_max_iterations` (default `5`) control the Milestone 5 agent graph — see [RATIONALE_PER_MILESTONE.md](RATIONALE_PER_MILESTONE.md#milestone-5--explicit-agentic-ai-workflow) for why this is a flag rather than two permanent code paths.
+
 ## Milestone Status
 
 | Milestone | Description                         | Status      |
@@ -159,7 +168,8 @@ The synthetic travel dataset (`data/synthetic/*.json`) is not `Settings`-configu
 | M2        | Minimal concierge (LLM + tracing)   | ✅ Complete |
 | M3        | Chat UI                              | ✅ Complete |
 | M4        | Synthetic travel tools               | ✅ Complete |
-| M5        | LangGraph agent workflow             | ⬜ Next     |
+| M5        | LangGraph agent workflow             | ✅ Complete |
+| M6        | Production-like trace design         | ⬜ Next     |
 | …         | See PROJECT_SPEC.md for full list    |             |
 
 ## Architecture Decision Records

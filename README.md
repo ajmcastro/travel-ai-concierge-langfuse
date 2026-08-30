@@ -6,7 +6,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M4 — Synthetic travel tools ([progress table](#milestones))  
+> **Current milestone:** M5 — Explicit Agentic AI workflow ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -34,7 +34,7 @@ Each item below is built at a specific milestone (see the [Milestones](#mileston
 | Language | Python 3.12 |
 | Package management | [uv](https://docs.astral.sh/uv/) |
 | API | FastAPI |
-| Agent orchestration | LangGraph (Milestone 5) |
+| Agent orchestration | LangGraph ✅ |
 | Chat UI | Streamlit ✅ |
 | Observability | [Langfuse](https://langfuse.com) |
 | LLM provider | Anthropic / Mock (OpenAI planned) |
@@ -120,7 +120,14 @@ curl -s -X POST http://localhost:8000/chat \
 make chat-smoke-test
 ```
 
-Every request is one Langfuse trace: a `travel_concierge_turn` root span with a nested `llm_call` generation recording model, tokens, and latency. Pass the same `session_id` across requests to group them into one conversation; pass `user_id` to attribute a trace to a real, stable identity (omitted rather than fabricated when you don't have one — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-2--minimal-concierge-with-tracing)).
+Every request is one Langfuse trace. By default (`AGENT_ENABLED=true`) it runs the Milestone 5 agent: an `agent` step decides whether to answer directly or call a tool; if it calls one, an `execute_tools` step runs it and the agent gets another turn to incorporate the result, looping until it has a final answer (capped by `AGENT_MAX_ITERATIONS`, default 5). Try a message that triggers the mock provider's tool-calling path:
+
+```bash
+curl -s -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
+  -d '{"message": "find me a hotel"}' | python3 -m json.tool
+```
+
+Pass the same `session_id` across requests to group them into one conversation; pass `user_id` to attribute a trace to a real, stable identity (omitted rather than fabricated when you don't have one — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-2--minimal-concierge-with-tracing)).
 
 With `DEBUG=true` (the `.env.example` default), the response includes a `trace_id` you can open directly in the Langfuse UI. Switch to the real model:
 
@@ -156,7 +163,21 @@ make tools-smoke-test   # calls all three tools directly, prints results + real 
 
 Three typed, synchronous functions over a small hand-authored dataset (8 destinations, 18 hotels): `search_destinations`, `search_hotels`, `get_destination_information`. Each call opens a real Langfuse **tool** observation — a distinct type from `span`/`generation`, visible as its own filter facet in the Tracing UI.
 
-**Not yet connected to `/chat` or the LLM** — despite the milestone's name suggesting otherwise, these are independently built and tested first; an LLM actually deciding to call one is Milestone 5's job. The project spec's own framing of M5 ("compare traces from simple chatbot vs. tool-using agent") only makes sense if that comparison doesn't already exist by M4 — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-4--synthetic-travel-tools) for the full reasoning. Calling a tool today produces its own standalone trace; the same code will nest under a real request trace automatically once M5 calls it from one.
+Built and tested standalone in Milestone 4 before anything called them from a request — `make tools-smoke-test` still calls them directly with no parent trace, producing their own single-node root traces. Since Milestone 5, the same unchanged code is also called from inside the agent's `execute_tools` step, where it nests under the request's trace instead — see [Agent](#agent) below.
+
+---
+
+## Agent
+
+```bash
+make agent-smoke-test   # compares "simple chatbot" vs "tool-using agent" traces, no server needed
+```
+
+A hand-written LangGraph graph — two nodes, `agent` and `tools`, looping until the model stops requesting tools. No `langgraph.prebuilt` agent: every node and routing decision is a named Python function you can read directly (`src/travel_ai_concierge/agent/`). `agent` opens a real Langfuse **agent** observation (a distinct type, like `tool` in Milestone 4); `tools` groups every tool call from one turn under one `execute_tools` span.
+
+Two independent safety nets cap the loop at `AGENT_MAX_ITERATIONS` (default 5): the agent withholds tools on what would be the last allowed call (so a well-behaved model still produces a real answer, not an empty one), and routing hard-stops regardless of that, in case a provider ever ignores having no tools offered. Full story, including a real off-by-one bug this went through, in [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-5--explicit-agentic-ai-workflow).
+
+Set `AGENT_ENABLED=false` to bypass the graph entirely and restore the Milestone 2 direct-call shape on the same `/chat` endpoint — the exact "simple chatbot vs. tool-using agent" comparison the milestone asks for, without maintaining two endpoints.
 
 ---
 
@@ -180,11 +201,11 @@ make check             # lint + format-check + typecheck
 src/travel_ai_concierge/
 ├── config/          — Pydantic Settings
 ├── api/             — FastAPI app, routes (/health, /chat), request/response schemas
-├── providers/llm/   — LLM provider abstraction ✅ (Milestone 2): Mock, Anthropic
+├── agent/           — LangGraph agent/tools loop ✅ (Milestone 5): state, nodes, graph
+├── providers/llm/   — LLM provider abstraction ✅ (Milestone 2, tool-calling added M5): Mock, Anthropic
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
-├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4) — not yet connected to /chat
-├── agent/           — LangGraph state and graph (Milestone 5)
+├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5)
 └── evaluation/      — Evaluators and runners (Milestone 9)
 
 ui/
@@ -219,7 +240,7 @@ data/
 | M2 | Minimal concierge with tracing ✅ |
 | M3 | Chat UI ✅ |
 | M4 | Synthetic travel tools ✅ |
-| M5 | LangGraph agent workflow |
+| M5 | LangGraph agent workflow ✅ |
 | M6 | Production-like trace design |
 | M7 | Sessions and multi-turn analysis |
 | M8 | Prompt management |

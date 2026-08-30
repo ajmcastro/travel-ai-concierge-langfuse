@@ -10,6 +10,7 @@ over whatever `.env` a developer happens to have on disk.
 import pytest
 from fastapi.testclient import TestClient
 
+from travel_ai_concierge.agent import get_agent_graph
 from travel_ai_concierge.api.app import create_app
 from travel_ai_concierge.config import get_settings
 from travel_ai_concierge.observability import get_langfuse_client
@@ -17,12 +18,14 @@ from travel_ai_concierge.providers.llm import get_llm_provider
 
 
 def _clear_all_caches() -> None:
-    # get_langfuse_client() is its own lru_cache singleton, separate from
-    # Settings — without clearing it too, whichever test runs first "freezes"
-    # its Langfuse config (host, tracing_enabled) for the rest of the process.
+    # Each of these is its own lru_cache singleton, separate from Settings —
+    # without clearing all of them, whichever test runs first "freezes" its
+    # config (Langfuse host/tracing, provider, compiled graph) for the rest
+    # of the process.
     get_settings.cache_clear()
     get_llm_provider.cache_clear()
     get_langfuse_client.cache_clear()
+    get_agent_graph.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -91,3 +94,23 @@ def test_trace_id_absent_outside_debug_mode(monkeypatch: pytest.MonkeyPatch):
         .json()
     )
     assert body["trace_id"] is None
+
+
+def test_agent_enabled_by_default_uses_tools(monkeypatch: pytest.MonkeyPatch):
+    # A message MockProvider's trigger heuristic recognizes — with the agent
+    # graph (the default), this should round-trip through a real tool call.
+    body = _client(monkeypatch).post("/chat", json={"message": "find me a hotel"}).json()
+    assert "tool result" in body["message"].lower()
+
+
+def test_agent_disabled_bypasses_tools_entirely(monkeypatch: pytest.MonkeyPatch):
+    # Same message, but with the Milestone 2 direct-call path restored — no
+    # graph, no tools offered, so MockProvider falls straight to its plain
+    # echo regardless of what the message says. This is the exact one-line
+    # comparison Milestone 5 asks for (simple chatbot vs. tool-using agent).
+    body = (
+        _client(monkeypatch, AGENT_ENABLED="false")
+        .post("/chat", json={"message": "find me a hotel"})
+        .json()
+    )
+    assert body["message"] == "[mock] I heard: find me a hotel"
