@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     # for a second, independent version axis.
     agent_version: str = "1.0.0"
 
+    # Milestone 7: how many prior turns (user+assistant exchanges) get
+    # replayed into context on each /chat call. Bounds token growth per
+    # conversation — the spec explicitly asks this project to be able to
+    # observe "did context size grow excessively," and an unbounded history
+    # is exactly that failure mode, not just a cost concern.
+    max_history_turns: int = 10
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

@@ -17,6 +17,7 @@ from travel_ai_concierge.agent import get_agent_graph
 from travel_ai_concierge.agent.graph import build_graph
 from travel_ai_concierge.api.app import create_app
 from travel_ai_concierge.config import get_settings
+from travel_ai_concierge.conversation import get_conversation_store
 from travel_ai_concierge.observability import get_langfuse_client
 from travel_ai_concierge.providers.llm import Message, get_llm_provider
 from travel_ai_concierge.providers.llm.base import LLMResponse, ToolCall, Usage
@@ -43,6 +44,7 @@ def _clear_all_caches() -> None:
     get_llm_provider.cache_clear()
     get_langfuse_client.cache_clear()
     get_agent_graph.cache_clear()
+    get_conversation_store.cache_clear()
 
 
 @pytest.fixture(autouse=True)

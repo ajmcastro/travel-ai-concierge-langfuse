@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from travel_ai_concierge.agent import get_agent_graph
 from travel_ai_concierge.api.app import create_app
 from travel_ai_concierge.config import get_settings
+from travel_ai_concierge.conversation import get_conversation_store
 from travel_ai_concierge.observability import get_langfuse_client
 from travel_ai_concierge.providers.llm import get_llm_provider
 
@@ -21,11 +22,15 @@ def _clear_all_caches() -> None:
     # Each of these is its own lru_cache singleton, separate from Settings —
     # without clearing all of them, whichever test runs first "freezes" its
     # config (Langfuse host/tracing, provider, compiled graph) for the rest
-    # of the process.
+    # of the process. get_conversation_store (Milestone 7) is additionally
+    # *stateful*, not just cached config — without clearing it, a session_id
+    # reused across two tests would carry real conversation history between
+    # them.
     get_settings.cache_clear()
     get_llm_provider.cache_clear()
     get_langfuse_client.cache_clear()
     get_agent_graph.cache_clear()
+    get_conversation_store.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -114,3 +119,96 @@ def test_agent_disabled_bypasses_tools_entirely(monkeypatch: pytest.MonkeyPatch)
         .json()
     )
     assert body["message"] == "[mock] I heard: find me a hotel"
+
+
+class RecordingProvider:
+    """Records every `messages` list it's called with, so a test can assert
+    on how much history was actually replayed — MockProvider's own reply
+    text only ever echoes the latest message, which can't prove history grew.
+    """
+
+    model = "recording"
+
+    def __init__(self) -> None:
+        self.calls: list[list] = []
+
+    async def complete(self, messages, tools=None):
+        from travel_ai_concierge.providers.llm.base import LLMResponse, Usage
+
+        self.calls.append(messages)
+        return LLMResponse(
+            content=f"msg_count={len(messages)}",
+            model=self.model,
+            usage=Usage(input_tokens=1, output_tokens=1),
+        )
+
+
+def test_second_turn_in_same_session_includes_first_turns_history(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    provider = RecordingProvider()
+    monkeypatch.setattr("travel_ai_concierge.api.routes.chat.get_llm_provider", lambda: provider)
+    client = _client(monkeypatch, AGENT_ENABLED="false")
+
+    first = client.post("/chat", json={"message": "hello", "session_id": "s1"}).json()
+    second = client.post("/chat", json={"message": "hi again", "session_id": "s1"}).json()
+
+    # Turn 1: [system, user]. Turn 2: [system, user1, assistant1, user2] —
+    # the prior exchange was genuinely replayed, not dropped.
+    assert first["message"] == "msg_count=2"
+    assert second["message"] == "msg_count=4"
+
+
+def test_sessions_do_not_share_history(monkeypatch: pytest.MonkeyPatch):
+    provider = RecordingProvider()
+    monkeypatch.setattr("travel_ai_concierge.api.routes.chat.get_llm_provider", lambda: provider)
+    client = _client(monkeypatch, AGENT_ENABLED="false")
+
+    client.post("/chat", json={"message": "hello", "session_id": "s1"})
+    other_session = client.post("/chat", json={"message": "hello", "session_id": "s2"}).json()
+
+    assert other_session["message"] == "msg_count=2"
+
+
+def test_history_is_trimmed_to_max_history_turns(monkeypatch: pytest.MonkeyPatch):
+    provider = RecordingProvider()
+    monkeypatch.setattr("travel_ai_concierge.api.routes.chat.get_llm_provider", lambda: provider)
+    client = _client(monkeypatch, AGENT_ENABLED="false", MAX_HISTORY_TURNS="1")
+
+    client.post("/chat", json={"message": "turn 1", "session_id": "s1"})
+    client.post("/chat", json={"message": "turn 2", "session_id": "s1"})
+    third = client.post("/chat", json={"message": "turn 3", "session_id": "s1"}).json()
+
+    # Only the single most recent prior turn survives: [system, user2,
+    # assistant2, user3] — turn 1 was trimmed out, not accumulated forever.
+    assert third["message"] == "msg_count=4"
+
+
+def test_failed_turn_is_not_remembered(monkeypatch: pytest.MonkeyPatch):
+    class FlakyThenFineProvider:
+        model = "flaky"
+        calls = 0
+
+        async def complete(self, messages, tools=None):
+            from travel_ai_concierge.providers.llm.base import LLMResponse, Usage
+
+            FlakyThenFineProvider.calls += 1
+            if FlakyThenFineProvider.calls == 1:
+                raise RuntimeError("boom")
+            return LLMResponse(
+                content=f"msg_count={len(messages)}",
+                model=self.model,
+                usage=Usage(input_tokens=1, output_tokens=1),
+            )
+
+    monkeypatch.setattr(
+        "travel_ai_concierge.api.routes.chat.get_llm_provider", lambda: FlakyThenFineProvider()
+    )
+    client = _client(monkeypatch, AGENT_ENABLED="false")
+
+    with pytest.raises(RuntimeError):
+        client.post("/chat", json={"message": "will fail", "session_id": "s1"})
+
+    second = client.post("/chat", json={"message": "hello", "session_id": "s1"}).json()
+    # Still [system, user] — the failed first attempt left no trace in history.
+    assert second["message"] == "msg_count=2"

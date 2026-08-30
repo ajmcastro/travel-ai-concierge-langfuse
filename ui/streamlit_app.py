@@ -89,9 +89,10 @@ with st.sidebar:
 
     st.divider()
     st.caption(
-        "Each message is sent as a single, stateless request — the LLM does not "
-        "yet see earlier turns in this conversation (that starts in Milestone 7). "
-        "The session_id above only groups these turns together in Langfuse."
+        f"The concierge remembers up to the last {settings.max_history_turns} turns of "
+        "this conversation server-side (Milestone 7) — each request still sends only "
+        "the latest message; the API replays history using session_id, the same ID "
+        "that groups these turns together in Langfuse."
     )
 
 for i, message in enumerate(st.session_state.messages):

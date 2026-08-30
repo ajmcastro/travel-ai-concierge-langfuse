@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install env serve health chat-smoke-test agent-smoke-test ui \
+.PHONY: help install env serve health chat-smoke-test agent-smoke-test conversation-smoke-test ui \
         langfuse-up langfuse-down langfuse-logs langfuse-smoke-test \
         up down restart logs \
         test test-unit test-integration \
@@ -13,7 +13,7 @@ RESET := \033[0m
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-22s$(RESET) %s\n", $$1, $$2}'
+	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-24s$(RESET) %s\n", $$1, $$2}'
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
@@ -39,6 +39,9 @@ chat-smoke-test:  ## Call POST /chat over real HTTP and print the response (requ
 
 agent-smoke-test:  ## Compare "simple chatbot" vs "tool-using agent" traces (no server needed)
 	uv run python scripts/smoke_test_agent.py
+
+conversation-smoke-test:  ## Run a real 3-turn conversation and inspect stored session state (requires `make serve`)
+	uv run python scripts/smoke_test_conversation.py
 
 ui:  ## Start the Streamlit chat UI (requires `make serve` running separately)
 	uv run streamlit run ui/streamlit_app.py

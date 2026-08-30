@@ -6,7 +6,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M6 — Production-like trace design ([progress table](#milestones))  
+> **Current milestone:** M7 — Sessions and multi-turn analysis ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -127,7 +127,7 @@ curl -s -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
   -d '{"message": "find me a hotel"}' | python3 -m json.tool
 ```
 
-Pass the same `session_id` across requests to group them into one conversation; pass `user_id` to attribute a trace to a real, stable identity (omitted rather than fabricated when you don't have one — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-2--minimal-concierge-with-tracing)).
+Pass the same `session_id` across requests to group them into one conversation *and*, since Milestone 7, give the concierge real memory of it — see [Sessions](#sessions-and-conversation-memory) below. Pass `user_id` to attribute a trace to a real, stable identity (omitted rather than fabricated when you don't have one — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-2--minimal-concierge-with-tracing)).
 
 Since Milestone 6, every trace also carries `tags` (`agent`/`direct-llm`, `provider:<name>`), structured `metadata` (`agent_enabled`, `llm_provider`), and — on the agent path — its own `agent_version`, independent of `app_version`. If a tool call fails or the turn raises, the relevant observation is marked `level="ERROR"` with a `status_message` instead of the failure being visible only as text. Full taxonomy and a real good-vs-poor example: [docs/TRACE_DESIGN.md](docs/TRACE_DESIGN.md).
 
@@ -143,6 +143,22 @@ No code changes, no different endpoint — same `/chat`, same trace shape, real 
 
 ---
 
+## Sessions and Conversation Memory
+
+```bash
+make conversation-smoke-test   # a real 3-turn conversation, requires `make serve`
+```
+
+Since Milestone 7, the concierge actually remembers a conversation — not just in Langfuse's Sessions view (grouped by `session_id` since Milestone 2), but in what the LLM itself sees. Every `/chat` call replays up to the last `MAX_HISTORY_TURNS` (default 10) exchanges from that `session_id` ahead of the new message, and stores the new exchange afterward — in-process, in-memory, gone on restart (a deliberate choice for an educational system with no other need for a database; see the "Conversation Memory" section of [docs/architecture.md](docs/architecture.md)).
+
+```bash
+curl -s http://localhost:8000/sessions/<session_id> | python3 -m json.tool
+```
+
+Returns this app's own record of that session's turns (404 if none exist yet) — `trace_id` per turn only in `DEBUG=true`, same convention as `/chat`'s own response. This is a different thing from Langfuse's own Session view, which already aggregates cost/latency/token totals per `session_id` natively — this endpoint answers "what did this session actually say," not "how much did it cost" (see [docs/TRACE_DESIGN.md](docs/TRACE_DESIGN.md)).
+
+---
+
 ## Chat UI
 
 ```bash
@@ -152,7 +168,7 @@ make ui       # Streamlit, in another — opens at http://localhost:8501
 
 A real chat interface: multi-turn transcript, a "New conversation" button (fresh `session_id`, cleared history), thumbs up/down under each response, and a sidebar debug panel (session/user ID, model, client-measured latency, and a link straight to the trace in Langfuse).
 
-Talks to the API exclusively over HTTP (`API_BASE_URL` in `.env`) — the UI process never imports agent or provider code, so it can be started, stopped, or deployed independently of the API. Two honest limitations, both visible in the UI itself rather than hidden: feedback buttons are a visible placeholder with no backend effect yet (real Langfuse scoring is Milestone 12), and each message is still sent as a single, stateless request — the LLM doesn't see earlier turns in the same conversation yet (that starts in Milestone 7), even though the transcript displays the full history.
+Talks to the API exclusively over HTTP (`API_BASE_URL` in `.env`) — the UI process never imports agent or provider code, so it can be started, stopped, or deployed independently of the API. One remaining honest limitation, visible in the UI itself rather than hidden: feedback buttons are a visible placeholder with no backend effect yet (real Langfuse scoring is Milestone 12). Since Milestone 7, the other limitation this section used to name here is resolved: each request still sends only the latest message, but the API itself now replays conversation history server-side (see [Sessions](#sessions-and-conversation-memory) above) — the transcript displaying full history is no longer just a client-side illusion.
 
 ---
 
@@ -202,9 +218,10 @@ make check             # lint + format-check + typecheck
 ```
 src/travel_ai_concierge/
 ├── config/          — Pydantic Settings
-├── api/             — FastAPI app, routes (/health, /chat), request/response schemas
+├── api/             — FastAPI app, routes (/health, /chat, /sessions/{id}), request/response schemas
 ├── agent/           — LangGraph agent/tools loop ✅ (Milestone 5): state, nodes, graph
 ├── providers/llm/   — LLM provider abstraction ✅ (Milestone 2, tool-calling added M5): Mock, Anthropic
+├── conversation/    — In-memory per-session conversation store ✅ (Milestone 7)
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
 ├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5)
@@ -245,7 +262,7 @@ data/
 | M4 | Synthetic travel tools ✅ |
 | M5 | LangGraph agent workflow ✅ |
 | M6 | Production-like trace design ✅ |
-| M7 | Sessions and multi-turn analysis |
+| M7 | Sessions and multi-turn analysis ✅ |
 | M8 | Prompt management |
 | M9 | Evaluation framework |
 | M10–M21 | Datasets, experiments, LLM-as-judge, regression… |

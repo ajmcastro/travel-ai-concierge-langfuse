@@ -1,13 +1,13 @@
 # Architecture — Travel AI Concierge
 
-> Last updated: Milestone 6  
+> Last updated: Milestone 7  
 > This document evolves with the project. Each milestone adds to it.
 
 ## Overview
 
 The Travel AI Concierge is an agentic AI application with comprehensive LLM observability via Langfuse. Its primary purpose is to demonstrate production-quality AI engineering practices using a realistic travel domain as the workload.
 
-As of Milestone 5, everything in the diagram below is real **except** the OpenAI provider and `build_itinerary` tool (shown for scale — future, unimplemented) and the Travel AI Search API integration (Milestone 18, optional). The Chat UI calls `POST /chat` over HTTP, which runs the LangGraph agent by default (`Settings.agent_enabled`, default `True`) — the agent decides whether to answer directly or call a tool, executes it if so, and loops back until it has a final answer. See the [Trace Structure](#trace-structure) section for what a real request actually produces, and [Milestone Status](#milestone-status) for what's implemented per milestone.
+As of Milestone 5, everything in the diagram below is real **except** the OpenAI provider and `build_itinerary` tool (shown for scale — future, unimplemented) and the Travel AI Search API integration (Milestone 18, optional). The Chat UI calls `POST /chat` over HTTP, which runs the LangGraph agent by default (`Settings.agent_enabled`, default `True`) — the agent decides whether to answer directly or call a tool, executes it if so, and loops back until it has a final answer. Since Milestone 7, each call also carries real conversation memory: prior turns in the same `session_id` are replayed into context, not just grouped in Langfuse. See the [Trace Structure](#trace-structure) section for what a real request actually produces, and [Milestone Status](#milestone-status) for what's implemented per milestone.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -18,7 +18,7 @@ As of Milestone 5, everything in the diagram below is real **except** the OpenAI
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    FastAPI (port 8000)                      │
-│       POST /chat · GET /health · POST /feedback             │
+│        POST /chat · GET /sessions/{id} · GET /health        │
 └───────────────────────┬─────────────────────────────────────┘
                         │
                         ▼
@@ -65,21 +65,31 @@ Instrumentation (all components above emit to Langfuse):
 ### Chat UI ✅ Implemented (M3)
 
 Streamlit app (`ui/streamlit_app.py`), a separate process that talks to FastAPI exclusively over HTTP — it never imports agent/provider code. Responsible for:
-- Multi-turn transcript display (client-side history; the backend itself is still stateless per request — see [Milestone 7](#milestone-status))
+- Multi-turn transcript display (client-side history) — since M7, the backend itself also remembers the conversation server-side, so what the UI displays and what the LLM actually sees are the same content, not just a client-side illusion of memory
 - Session continuity (`session_id` persisted per browser session) and reset ("New conversation")
 - A stable, synthetic `user_id` per browser session (not per message)
 - Debug panel: session/user ID, model, client-measured latency, and a link to the trace in Langfuse
 - Feedback placeholders (`st.feedback`) — visible, but not yet sent to Langfuse (Milestone 12)
 - Clean error display when the API is unreachable or returns an error, and when the debug panel's Langfuse trace-link lookup fails (unreachable host, bad credentials, timeout — caught broadly since this is a non-critical convenience, not the core chat feature)
 
-### FastAPI ✅ Implemented (M0, M2, M5, M6)
+### FastAPI ✅ Implemented (M0, M2, M5, M6, M7)
 
 The HTTP boundary. Accepts chat requests, manages session IDs, and returns responses. Does not contain agent logic itself — it delegates. Responsible for:
 - Validating request schemas (Pydantic) — `api/schemas/chat.py`
 - Opening the root Langfuse trace per request and setting session/user/environment/tags/metadata/version attribution — `api/routes/chat.py` (M6 adds tags, metadata, and the `agent_version` axis; see [TRACE_DESIGN.md](TRACE_DESIGN.md))
+- Fetching prior turns from the conversation store and replaying them ahead of the current message before calling the agent/provider, then persisting the new turn on success (M7 — see "Conversation Memory" below)
 - Delegating to the agent graph by default (`Settings.agent_enabled`, M5), or the LLM provider directly when `agent_enabled=False` (the M2 shape, kept as a live comparison point rather than deleted)
 - Recording `level="ERROR"`/`status_message` on the root trace if the turn raises, before re-raising (M6)
 - Returning trace IDs, but only when `Settings.debug` is true
+- `GET /sessions/{session_id}` — returns this app's own stored turn history for a session, 404 if none exists (M7)
+
+### Conversation Memory ✅ Implemented (M7)
+
+An in-process, in-memory store (`conversation/store.py`'s `ConversationStore`, `dict[session_id, list[Turn]]` behind an `asyncio.Lock`) giving the agent real multi-turn memory — before this milestone, `session_id` only grouped traces in Langfuse; the LLM itself never saw a prior turn. `api/routes/chat.py` reads a session's history before building the message list, replays it as alternating user/assistant messages ahead of the current one, and appends the new turn only after a successful response (a failed turn is never remembered, so it can't poison every later turn's context).
+
+Bounded by `Settings.max_history_turns` (default 10) — the store keeps only the most recent N turns per session, trimming the oldest first. This is a deliberate answer to the milestone spec's own "did context size grow excessively?" question: unbounded history *is* that failure mode, not just a hypothetical cost concern.
+
+**Deliberately in-memory, not a database**: "semi-durable... appropriate for the educational system" (the spec's own wording) is read here as license to not introduce Postgres/Redis for app-level state when nothing else in this project needs a database. The real, durable record of what happened in a session is already Langfuse's own trace history — this store only needs to survive one running process, not a restart. A real production deployment running multiple worker processes would need shared storage (Redis, a database) instead, since this store is local to whichever process handled the request.
 
 ### Travel AI Concierge Agent ✅ Implemented (M5)
 
@@ -113,6 +123,11 @@ Milestone 6, `session_id`/`user_id`/`environment` (from M2), plus `tags`,
 `metadata`, and — on the agent path — an independent `agent_version`; see
 [docs/TRACE_DESIGN.md](TRACE_DESIGN.md) for the full taxonomy and the
 error-metadata design (`level`/`status_message`) this milestone also added.
+Since Milestone 7, `metadata.history_turns` also records how many prior
+turns were replayed into this specific trace's context — the direct,
+per-trace answer to "did context size grow excessively," without needing a
+custom cost/token dashboard (Langfuse's own per-session aggregation already
+covers that; see [TRACE_DESIGN.md](TRACE_DESIGN.md)).
 
 **What `POST /chat` produces today when no tool is needed** (`agent_enabled=True`, the default — same shape whether the model answers directly or is asked something it doesn't need a tool for):
 
@@ -170,6 +185,8 @@ The synthetic travel dataset (`data/synthetic/*.json`) is not `Settings`-configu
 
 `Settings.agent_version` (default `"1.0.0"`) is Milestone 6's addition — bump it when the agent's own graph/node logic changes materially, independent of `Settings.app_version`. See [docs/TRACE_DESIGN.md](TRACE_DESIGN.md) for the full taxonomy this milestone introduced (tags, metadata, error levels).
 
+`Settings.max_history_turns` (default `10`) bounds how many prior turns Milestone 7's conversation store replays into context per `/chat` call — the oldest turns are trimmed first once a session exceeds this. This is app-level state, in-memory and per-process (not backed by Redis/Postgres) — see "Conversation Memory" above for why that's a deliberate choice for this project rather than a shortcut.
+
 ## Milestone Status
 
 | Milestone | Description                         | Status      |
@@ -181,7 +198,8 @@ The synthetic travel dataset (`data/synthetic/*.json`) is not `Settings`-configu
 | M4        | Synthetic travel tools               | ✅ Complete |
 | M5        | LangGraph agent workflow             | ✅ Complete |
 | M6        | Production-like trace design         | ✅ Complete |
-| M7        | Sessions and multi-turn analysis     | ⬜ Next     |
+| M7        | Sessions and multi-turn analysis     | ✅ Complete |
+| M8        | Prompt management                    | ⬜ Next     |
 | …         | See PROJECT_SPEC.md for full list    |             |
 
 ## Architecture Decision Records

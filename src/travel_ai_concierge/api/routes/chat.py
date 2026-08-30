@@ -6,6 +6,7 @@ from langfuse import propagate_attributes
 from travel_ai_concierge.agent import get_agent_graph
 from travel_ai_concierge.api.schemas.chat import ChatRequest, ChatResponse
 from travel_ai_concierge.config import get_settings
+from travel_ai_concierge.conversation import Turn, get_conversation_store
 from travel_ai_concierge.observability import get_langfuse_client
 from travel_ai_concierge.providers.llm import Message, get_llm_provider
 
@@ -24,8 +25,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
     settings = get_settings()
     client = get_langfuse_client()
     provider = get_llm_provider()
+    store = get_conversation_store()
 
     session_id = request.session_id or f"session-{uuid.uuid4().hex[:12]}"
+    history = await store.get_history(session_id)
 
     with client.start_as_current_observation(
         name="travel_concierge_turn",
@@ -50,15 +53,20 @@ async def chat(request: ChatRequest) -> ChatResponse:
             metadata={
                 "agent_enabled": settings.agent_enabled,
                 "llm_provider": settings.llm_provider,
+                # Milestone 7: a direct, cheap answer to "did context size
+                # grow excessively" — filterable/sortable per trace without
+                # opening it, independent of Langfuse's own token counts.
+                "history_turns": len(history),
             },
             # Only the agent path has an agent version to report; the direct
             # path (AGENT_ENABLED=false) isn't running agent code at all.
             version=settings.agent_version if settings.agent_enabled else None,
         ):
-            messages = [
-                Message(role="system", content=SYSTEM_PROMPT),
-                Message(role="user", content=request.message),
-            ]
+            messages = [Message(role="system", content=SYSTEM_PROMPT)]
+            for turn in history:
+                messages.append(Message(role="user", content=turn.user_message))
+                messages.append(Message(role="assistant", content=turn.assistant_message))
+            messages.append(Message(role="user", content=request.message))
 
             try:
                 if settings.agent_enabled:
@@ -83,6 +91,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 raise
 
         root_span.update(output={"message": content})
+
+    # Only reached on success — a turn that raised never gets remembered,
+    # so a failed exchange can't poison every subsequent turn's context.
+    await store.append_turn(
+        session_id,
+        Turn(user_message=request.message, assistant_message=content, trace_id=trace_id),
+        max_turns=settings.max_history_turns,
+    )
 
     if settings.debug:
         # Spans batch and export asynchronously; a request in a short-lived
