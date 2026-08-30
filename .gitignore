@@ -30,5 +30,9 @@ volumes/
 # Generated docs output
 docs/CHAT_HISTORY.md
 
+# Evaluation run output (Milestone 9) — a run artifact, not part of the
+# dataset; data/evaluation/cases.json itself IS committed.
+data/evaluation/results/
+
 # claude
 .claude/settings.json

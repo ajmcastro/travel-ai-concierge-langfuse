@@ -6,7 +6,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M8 — Prompt management ([progress table](#milestones))  
+> **Current milestone:** M9 — Evaluation framework ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -176,6 +176,24 @@ Every trace records which prompt version answered it (`metadata.prompt_version`,
 
 ---
 
+## Evaluation
+
+```bash
+make generate-eval-dataset  # (re)write data/evaluation/cases.json
+make evaluate               # run it, print a human-readable + JSON report
+make eval-ci                # same, exits 1 only if a case crashed outright
+```
+
+Since Milestone 9, a local, deterministic evaluation harness runs 39 hand-authored test cases through the *real* agent graph (no Langfuse dataset dependency yet — that's [Milestone 10](#milestones)). Cases cover all 20 query classes the project spec names — destination/hotel recommendation, family/couples holiday, budget/luxury, beach/city/culture/nightlife/quiet/food-wine, itinerary planning, vague requests, multi-constraint, needs-clarification, one-tool, multi-tool, impossible-constraint, contradictory-preferences — grounded in the real synthetic destinations/hotels, not invented data.
+
+Five deterministic (Layer 1 — no LLM judge yet, that's [Milestone 11](#milestones)) evaluators check each case: expected tool called, tool arguments satisfy the stated constraints, the response is non-empty, the response actually references what a tool returned (a groundedness *proxy*, not semantic scoring), and — where expected — a clarifying question was asked. Each evaluator can also `skip` a case it doesn't apply to, so out-of-scope checks aren't counted as failures.
+
+**Read the report's own note before judging a low pass rate**: under the default `MockProvider`, most tool-usage and clarification checks fail — not because the agent is broken, but because Mock is a fixed keyword-trigger table with no real reasoning (see [providers/llm/mock.py](src/travel_ai_concierge/providers/llm/mock.py)). The dataset describes what a *real* agent should do; run with `LLM_PROVIDER=anthropic` for a meaningful signal. `make eval-ci`'s `--ci` flag is **not** a regression/baseline gate yet — that's explicitly [Milestone 17](#milestones)'s job.
+
+Each case runs as a real Langfuse trace, tagged `evaluation` plus its query class — inspectable exactly like production traffic, not a hidden side process.
+
+---
+
 ## Chat UI
 
 ```bash
@@ -243,14 +261,14 @@ src/travel_ai_concierge/
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
 ├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5)
-└── evaluation/      — Evaluators and runners (Milestone 9)
+└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9)
 
 ui/
 └── streamlit_app.py — Chat UI ✅ (Milestone 3), talks to the API over HTTP only
 
 data/
 ├── synthetic/       — 8 destinations, 18 hotels ✅ (Milestone 4), regenerate via `make generate-data`
-└── evaluation/      — Evaluation datasets (Milestone 9)
+└── evaluation/      — 39-case dataset ✅ (Milestone 9), regenerate via `make generate-eval-dataset`; results/ is gitignored run output
 ```
 
 ---
@@ -282,7 +300,7 @@ data/
 | M6 | Production-like trace design ✅ |
 | M7 | Sessions and multi-turn analysis ✅ |
 | M8 | Prompt management ✅ |
-| M9 | Evaluation framework |
+| M9 | Evaluation framework ✅ |
 | M10–M21 | Datasets, experiments, LLM-as-judge, regression… |
 
 ---

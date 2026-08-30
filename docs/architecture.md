@@ -1,13 +1,13 @@
 # Architecture — Travel AI Concierge
 
-> Last updated: Milestone 8  
+> Last updated: Milestone 9  
 > This document evolves with the project. Each milestone adds to it.
 
 ## Overview
 
 The Travel AI Concierge is an agentic AI application with comprehensive LLM observability via Langfuse. Its primary purpose is to demonstrate production-quality AI engineering practices using a realistic travel domain as the workload.
 
-As of Milestone 5, everything in the diagram below is real **except** the OpenAI provider and `build_itinerary` tool (shown for scale — future, unimplemented) and the Travel AI Search API integration (Milestone 18, optional). The Chat UI calls `POST /chat` over HTTP, which runs the LangGraph agent by default (`Settings.agent_enabled`, default `True`) — the agent decides whether to answer directly or call a tool, executes it if so, and loops back until it has a final answer. Since Milestone 7, each call also carries real conversation memory: prior turns in the same `session_id` are replayed into context, not just grouped in Langfuse. Since Milestone 8, the system prompt itself is fetched from Langfuse Prompt Management rather than hardcoded — see [Prompt Management](#prompt-management-m8) below. See the [Trace Structure](#trace-structure) section for what a real request actually produces, and [Milestone Status](#milestone-status) for what's implemented per milestone.
+As of Milestone 5, everything in the diagram below is real **except** the OpenAI provider and `build_itinerary` tool (shown for scale — future, unimplemented) and the Travel AI Search API integration (Milestone 18, optional). The Chat UI calls `POST /chat` over HTTP, which runs the LangGraph agent by default (`Settings.agent_enabled`, default `True`) — the agent decides whether to answer directly or call a tool, executes it if so, and loops back until it has a final answer. Since Milestone 7, each call also carries real conversation memory: prior turns in the same `session_id` are replayed into context, not just grouped in Langfuse. Since Milestone 8, the system prompt itself is fetched from Langfuse Prompt Management rather than hardcoded — see [Prompt Management](#prompt-management-m8) below. Since Milestone 9, a local deterministic evaluation harness (`make evaluate`) runs a 39-case dataset through this same agent — see "Evaluation Framework" below. See the [Trace Structure](#trace-structure) section for what a real request actually produces, and [Milestone Status](#milestone-status) for what's implemented per milestone.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -121,6 +121,18 @@ Three tools, described to the LLM via `tools/specs.py`'s `TOOL_SPECS` (JSON Sche
 - `search_hotels(destination_id, family_friendly, max_price_band, limit)` — scoped to one destination, filtered by family fit and a price-band ceiling (`budget ≤ mid ≤ luxury`)
 - `get_destination_information(destination_id)` — single-record lookup, `None` if not found
 
+### Evaluation Framework (M9)
+
+`evaluation/` — a local, deterministic evaluation harness, deliberately independent of Langfuse datasets (that's Milestone 10's job; the spec is explicit: "Do not require Langfuse datasets yet for the core evaluation engine"). Three parts:
+
+- **`data/evaluation/cases.json`** (`make generate-eval-dataset` regenerates it from `scripts/generate_evaluation_dataset.py`) — 39 hand-authored cases (`EvaluationCase`) covering all 20 query classes the spec names (destination/hotel recommendation, family/couples holiday, budget/luxury, beach/city/culture/nightlife/quiet/food-wine, itinerary planning, vague requests, multi-constraint, needs-clarification, one-tool, multi-tool, impossible-constraint, contradictory-preferences), grounded in the real synthetic destinations/hotels — real IDs, tags, and price bands, not invented ones.
+- **`evaluation/evaluators.py`** — five Layer 1 (deterministic, no LLM judge — that's Milestone 11) evaluators: `tool_usage_matches_expected`, `tool_arguments_satisfy_constraints`, `response_is_nonempty`, `response_references_tool_result` (a groundedness *proxy* — substring match against what a tool actually returned, not semantic scoring), and `clarifying_question_when_expected`. Each returns pass/fail/**skip** — skip for a case a given check doesn't apply to, so out-of-scope cases aren't counted as failures.
+- **`evaluation/runner.py`** — runs each case through the *real* agent graph (`get_agent_graph()`, the same singleton `/chat` uses), always the agent path regardless of `Settings.agent_enabled`, since evaluation exists specifically to test tool-selection. Each case gets its own real Langfuse trace (`travel_concierge_turn`, tagged `evaluation` + its query class) — inspectable in Langfuse exactly like production traffic, not a parallel invisible process.
+
+`make evaluate` (`scripts/run_evaluation.py`) runs the full suite, writing both a human-readable console report and a machine-readable JSON report (`data/evaluation/results/latest.json`, gitignored — a run artifact, not part of the dataset). `make eval-ci` adds `--ci`, which exits non-zero only if a case *crashed* — it is **not** yet a baseline/regression quality gate; that's explicitly Milestone 17's job ("Establish a baseline... configurable regression thresholds").
+
+**Honest limitation, printed directly in the report**: under the default `MockProvider`, most tool-usage/constraint/clarification checks fail — not because the agent is broken, but because Mock is a fixed keyword-trigger table (2 hardcoded behaviors, no real reasoning, never asks a clarifying question). The dataset's expectations describe what a *real* agent should do; a meaningful pass rate needs `LLM_PROVIDER=anthropic`. The evaluator *logic itself* is tested separately and offline against scripted fake providers with known behavior, not against Mock's real limitations — see `tests/unit/test_evaluators.py` and `test_evaluation_runner.py`.
+
 ### Langfuse
 
 The observability backend. Receives structured trace data from the application. Provides the UI for trace inspection, prompt management, dataset management, evaluation, and experiments.
@@ -214,7 +226,8 @@ The synthetic travel dataset (`data/synthetic/*.json`) is not `Settings`-configu
 | M6        | Production-like trace design         | ✅ Complete |
 | M7        | Sessions and multi-turn analysis     | ✅ Complete |
 | M8        | Prompt management                    | ✅ Complete |
-| M9        | Evaluation framework                 | ⬜ Next     |
+| M9        | Evaluation framework                 | ✅ Complete |
+| M10       | Langfuse datasets and experiments    | ⬜ Next     |
 | …         | See PROJECT_SPEC.md for full list    |             |
 
 ## Architecture Decision Records

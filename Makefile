@@ -4,7 +4,7 @@
         up down restart logs \
         test test-unit test-integration \
         lint format format-check typecheck check \
-        generate-data tools-smoke-test evaluate eval-ci \
+        generate-data tools-smoke-test generate-eval-dataset evaluate eval-ci \
         seed-prompts prompts-smoke-test \
         clean
 
@@ -110,10 +110,13 @@ generate-data:  ## Generate synthetic travel data (writes data/synthetic/*.json)
 tools-smoke-test:  ## Call the travel tools directly and print real Langfuse tool traces
 	uv run python scripts/smoke_test_tools.py
 
-evaluate:  ## Run the evaluation suite
+generate-eval-dataset:  ## (Re)write data/evaluation/cases.json (Milestone 9)
+	uv run python scripts/generate_evaluation_dataset.py
+
+evaluate:  ## Run the deterministic evaluation suite (human + machine-readable report)
 	uv run python scripts/run_evaluation.py
 
-eval-ci:  ## Run evaluation and exit non-zero on regression
+eval-ci:  ## Run evaluation, exit non-zero if a case crashed (not yet a regression gate — see Milestone 17)
 	uv run python scripts/run_evaluation.py --ci
 
 # ── Prompt management (Milestone 8) ──────────────────────────────────────────

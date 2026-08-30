@@ -1,0 +1,444 @@
+[
+  {
+    "id": "destination-recommendation-001",
+    "query_class": "destination_recommendation",
+    "message": "I love good food, wine, and quiet places \u2014 any destination recommendations?",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "food",
+        "wine",
+        "quiet"
+      ]
+    }
+  },
+  {
+    "id": "destination-recommendation-002",
+    "query_class": "destination_recommendation",
+    "message": "Where can I find beach destinations that are also good for romance?",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "beach",
+        "romantic"
+      ]
+    }
+  },
+  {
+    "id": "hotel-recommendation-001",
+    "query_class": "hotel_recommendation",
+    "message": "What hotels do you have in the Algarve?",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "algarve"
+    }
+  },
+  {
+    "id": "hotel-recommendation-002",
+    "query_class": "hotel_recommendation",
+    "message": "Show me hotels in Kyoto.",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "kyoto"
+    }
+  },
+  {
+    "id": "family-holiday-001",
+    "query_class": "family_holiday",
+    "message": "We're a family with two young kids looking for a beach holiday in the Algarve. What hotels would work?",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "algarve",
+      "family_friendly": true
+    }
+  },
+  {
+    "id": "family-holiday-002",
+    "query_class": "family_holiday",
+    "message": "Any family-friendly hotels in Mallorca?",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "mallorca",
+      "family_friendly": true
+    }
+  },
+  {
+    "id": "couples-holiday-001",
+    "query_class": "couples_holiday",
+    "message": "My partner and I want a romantic getaway. Any destination ideas?",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "romantic"
+      ]
+    }
+  },
+  {
+    "id": "couples-holiday-002",
+    "query_class": "couples_holiday",
+    "message": "Looking for a quiet, romantic hotel in Santorini for our anniversary.",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "santorini"
+    }
+  },
+  {
+    "id": "budget-001",
+    "query_class": "budget",
+    "message": "What's the cheapest hotel you have in Lisbon?",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "lisbon",
+      "max_price_band": "budget"
+    }
+  },
+  {
+    "id": "budget-002",
+    "query_class": "budget",
+    "message": "I need a budget-friendly hotel in the Algarve, nothing fancy.",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "algarve",
+      "max_price_band": "budget"
+    }
+  },
+  {
+    "id": "luxury-001",
+    "query_class": "luxury",
+    "message": "I want the most luxurious hotel available in Santorini.",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "santorini"
+    }
+  },
+  {
+    "id": "luxury-002",
+    "query_class": "luxury",
+    "message": "Book me the fanciest room you've got in Kyoto.",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "kyoto"
+    }
+  },
+  {
+    "id": "beach-001",
+    "query_class": "beach",
+    "message": "I want a beach vacation, ideally somewhere lively with nightlife.",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "beach",
+        "nightlife"
+      ]
+    }
+  },
+  {
+    "id": "beach-002",
+    "query_class": "beach",
+    "message": "Recommend a good beach destination for a relaxing week.",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "beach"
+      ]
+    }
+  },
+  {
+    "id": "city-001",
+    "query_class": "city",
+    "message": "I'm looking for a city break somewhere with great culture and nightlife.",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "city",
+        "culture",
+        "nightlife"
+      ]
+    }
+  },
+  {
+    "id": "city-002",
+    "query_class": "city",
+    "message": "Any recommendations for a compact, walkable city?",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "city"
+      ]
+    }
+  },
+  {
+    "id": "culture-001",
+    "query_class": "culture",
+    "message": "I want a trip full of culture, museums, and history.",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "culture"
+      ]
+    }
+  },
+  {
+    "id": "culture-002",
+    "query_class": "culture",
+    "message": "Somewhere with rich history and traditional architecture, like temples.",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "culture"
+      ]
+    }
+  },
+  {
+    "id": "nightlife-001",
+    "query_class": "nightlife",
+    "message": "Where's good for nightlife and partying?",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "nightlife"
+      ]
+    }
+  },
+  {
+    "id": "quiet-001",
+    "query_class": "quiet",
+    "message": "I need somewhere peaceful and quiet to unwind, away from crowds.",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "quiet"
+      ]
+    }
+  },
+  {
+    "id": "quiet-002",
+    "query_class": "quiet",
+    "message": "Looking for a calm, non-touristy hotel in Porto.",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "porto"
+    }
+  },
+  {
+    "id": "food-wine-001",
+    "query_class": "food_wine",
+    "message": "I'm a foodie who loves wine regions.",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "food",
+        "wine"
+      ]
+    }
+  },
+  {
+    "id": "food-wine-002",
+    "query_class": "food_wine",
+    "message": "Recommend somewhere known for great food and wine culture.",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "food",
+        "wine"
+      ]
+    }
+  },
+  {
+    "id": "itinerary-planning-001",
+    "query_class": "itinerary_planning",
+    "message": "Can you build me a 5-day itinerary for Kyoto?",
+    "expected_tools": [
+      "get_destination_information"
+    ],
+    "expected_arguments": {
+      "destination_id": "kyoto"
+    }
+  },
+  {
+    "id": "itinerary-planning-002",
+    "query_class": "itinerary_planning",
+    "message": "Plan out a week in Tuscany for me, day by day.",
+    "expected_tools": [
+      "get_destination_information"
+    ],
+    "expected_arguments": {
+      "destination_id": "tuscany"
+    }
+  },
+  {
+    "id": "vague-request-001",
+    "query_class": "vague_request",
+    "message": "I want to go on vacation somewhere nice.",
+    "expects_clarification": true
+  },
+  {
+    "id": "vague-request-002",
+    "query_class": "vague_request",
+    "message": "Help me plan a trip.",
+    "expects_clarification": true
+  },
+  {
+    "id": "multi-constraint-001",
+    "query_class": "multi_constraint",
+    "message": "Family-friendly, budget hotel in the Algarve for a beach holiday.",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "algarve",
+      "family_friendly": true,
+      "max_price_band": "budget"
+    }
+  },
+  {
+    "id": "multi-constraint-002",
+    "query_class": "multi_constraint",
+    "message": "Quiet, romantic destination somewhere with good beaches.",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "beach",
+        "quiet",
+        "romantic"
+      ]
+    }
+  },
+  {
+    "id": "requires-clarification-001",
+    "query_class": "requires_clarification",
+    "message": "Find me somewhere warm for a week.",
+    "expects_clarification": true
+  },
+  {
+    "id": "requires-clarification-002",
+    "query_class": "requires_clarification",
+    "message": "I want to book a hotel.",
+    "expects_clarification": true
+  },
+  {
+    "id": "requires-one-tool-001",
+    "query_class": "requires_one_tool",
+    "message": "Tell me about Lisbon.",
+    "expected_tools": [
+      "get_destination_information"
+    ],
+    "expected_arguments": {
+      "destination_id": "lisbon"
+    }
+  },
+  {
+    "id": "requires-one-tool-002",
+    "query_class": "requires_one_tool",
+    "message": "What's the climate like in Reykjavik?",
+    "expected_tools": [
+      "get_destination_information"
+    ],
+    "expected_arguments": {
+      "destination_id": "reykjavik"
+    }
+  },
+  {
+    "id": "requires-multiple-tools-001",
+    "query_class": "requires_multiple_tools",
+    "message": "Tell me about Santorini, then show me hotels there.",
+    "expected_tools": [
+      "get_destination_information",
+      "search_hotels"
+    ]
+  },
+  {
+    "id": "requires-multiple-tools-002",
+    "query_class": "requires_multiple_tools",
+    "message": "Find me a beach destination good for families, then show me a hotel there for two kids.",
+    "expected_tools": [
+      "search_destinations",
+      "search_hotels"
+    ]
+  },
+  {
+    "id": "impossible-constraint-001",
+    "query_class": "impossible_constraint",
+    "message": "I want to book a hotel on the Moon.",
+    "expected_tools": []
+  },
+  {
+    "id": "impossible-constraint-002",
+    "query_class": "impossible_constraint",
+    "message": "Find me a beach holiday in Antarctica.",
+    "expected_tools": [
+      "search_destinations"
+    ],
+    "expected_arguments": {
+      "tags": [
+        "beach"
+      ]
+    }
+  },
+  {
+    "id": "contradictory-preferences-001",
+    "query_class": "contradictory_preferences",
+    "message": "I want a lively nightlife scene but somewhere completely quiet and peaceful.",
+    "expects_clarification": true
+  },
+  {
+    "id": "contradictory-preferences-002",
+    "query_class": "contradictory_preferences",
+    "message": "I want a budget hotel but with five-star luxury amenities, in Mallorca.",
+    "expected_tools": [
+      "search_hotels"
+    ],
+    "expected_arguments": {
+      "destination_id": "mallorca",
+      "max_price_band": "budget"
+    }
+  }
+]
