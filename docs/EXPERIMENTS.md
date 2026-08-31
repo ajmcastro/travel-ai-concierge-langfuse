@@ -348,3 +348,57 @@ Multi-step wins meaningfully on quality (+15.9 percentage points on Layer 1 pass
 **Tests added**: `tests/unit/test_evaluation_runner.py` gained two `InMemorySpanExporter`-based tests (the same real-attribute-verification pattern `test_trace_design.py` established for Milestone 6) — one proving `extra_tags`/`extra_metadata` merge additively with the base `["evaluation", query_class]` tagging, one proving that omitting them reproduces the exact prior behavior byte-for-byte, so no other caller (`run_evaluation.py`, `experiment.py`) is affected. `tests/unit/test_cost_latency.py` gained two more, spying on `run_case()` to confirm `run_case_with_metrics()` computes the right `extra_tags`/`extra_metadata` from `config_name` (and passes nothing extra when it's omitted). 208 tests total pass (was 204).
 
 **Limitations**: `--push-to-langfuse`'s traces don't carry local cost/latency metrics (no `UsageTrackingProvider` in that path) — the printed comparison report remains the one authoritative source for those numbers; the Langfuse-native view is for browsing the same 39 cases per config, not a second measurement of the same thing. Its own per-item "Latency" figure (89ms, observed live) is real but not comparable to the script's own p50/p95 numbers (tenths of a millisecond) — it includes Langfuse SDK/network overhead the local measurement never sees, a genuinely different quantity, not a discrepancy to reconcile.
+
+---
+
+## 2026-08-31 — M15: fault injection lab — real trace evidence for every named failure mode, plus one real bug found by reading the SDK source first
+
+**Hypothesis**: before writing any fault-injection code, check what the existing error-handling paths (M2, M6) actually cover for each of the spec's six named fault types, and whether the resulting Langfuse traces actually show what a debugging engineer would need — not by reasoning about the code, but by reading the real SDK source and then running real faults through the real agent graph.
+
+**Configuration**: `uv run python scripts/fault_injection_lab.py` (`make fault-injection-lab`) — runs one message ("find me a hotel") through the real agent graph under each fault, plus a direct `search_hotels("atlantis")` call for "no results" and a `LANGFUSE_HOST=http://localhost:1` run for "Langfuse unavailable". `LLM_PROVIDER=mock` (default).
+
+**Result — real output from this environment**:
+
+```
+=== Baseline (no fault) ===
+  Result: HTTP 200 (would-be) — the request completed
+
+=== LLM timeout ===
+  Result: HTTP 500 (would-be) — raised TimeoutError: simulated llm timeout
+
+=== LLM provider unavailable ===
+  Result: HTTP 500 (would-be) — raised ConnectionError: simulated llm provider unavailable
+
+=== Malformed model output (tool call missing arguments) ===
+  Result: HTTP 200 (would-be) — the request completed
+  Response: [mock] Based on the tool result: Error executing search_hotels: search_hotels()
+            missing 1 required positional argument: 'destination_id'
+
+=== Tool exception (travel provider error) ===
+  Result: HTTP 200 (would-be) — the request completed
+  Response: [mock] Based on the tool result: Error executing search_hotels: simulated tool
+            exception in 'search_hotels'
+
+=== Tool timeout ===
+  Result: HTTP 200 (would-be) — the request completed
+  Response: [mock] Based on the tool result: Error executing search_hotels: simulated tool
+            timeout in 'search_hotels'
+
+=== No search results (real tool call, no fault injected) ===
+  Result: HTTP 200 (would-be) — 0 hotels found (empty is not an error)
+
+=== Langfuse unavailable (LANGFUSE_HOST=http://localhost:1) ===
+  Result: HTTP 200 (would-be) — completed in 4.9ms despite Langfuse being unreachable
+```
+
+Every tool-layer fault (malformed output, tool exception, tool timeout) recovered to a real HTTP 200 with a coherent (if apologetic) answer. Both LLM-layer faults produced a clean HTTP 500. "No results" and "Langfuse unavailable" needed no fault injection at all — both were already the system's normal behavior.
+
+**A real bug found and fixed as a direct result of this investigation, before the lab script was even written**: reading Langfuse's own `_start_as_current_otel_span_with_processed_media` source (not assuming, per this project's standing discipline since M1) showed it's a bare `try/finally` with no `except` — it never marks a span `level="ERROR"` just because an exception propagated through it. `AnthropicProvider.complete()`'s own `generation.update(...)` call sits *after* the real API call, so a real timeout or connection failure would leave the `llm_call` generation span completely unmarked — only the root trace (via `chat.py`'s M6-era `try/except`) would show anything went wrong. Fixed by wrapping both `AnthropicProvider` and `MockProvider`'s completion calls in `try/except`, marking the generation `ERROR` before re-raising — the same pattern `tools_node` already used for tool failures since M6, just missing from the LLM-call layer until now. Verified live: opened the real trace from the "LLM timeout" run above — the `llm_call` generation now shows a red **Error** banner reading `simulated llm timeout`, exactly where it previously would have shown nothing.
+
+**A second, smaller finding — this time in the test suite, not the app**: writing a `/chat`-level test to prove tool-layer recovery required patching `agent.nodes.get_langfuse_client` in addition to `chat.py`'s own copy — omitting it silently sent `agent`/`execute_tools` spans to the real, differently-configured cached Langfuse client instead of the test's `InMemorySpanExporter`, so the assertion failed with a `KeyError` rather than a wrong value. `test_trace_design.py`'s own existing chat-level tests never hit this because they never assert on those child spans — not a bug there, just a sharp edge the new resilience tests had to work around and now document.
+
+**Verification of the single most emphasized resilience claim in the spec** ("Langfuse unavailable... This last case is particularly important"): `tests/integration/test_langfuse_unavailable.py` points `LANGFUSE_HOST` at `http://localhost:1` (a closed local port — fast ECONNREFUSED, no slow DNS lookup) and confirms `/chat` still returns 200 in under 2 seconds, non-debug mode. Ran it live: 1.61s total test time, response returned before the SDK's own background retry/backoff log lines even appeared. This claim had been asserted in ADR-004 since Milestone 1 but never actually end-to-end tested until this milestone.
+
+**Interpretation**: the real, substantive finding of this milestone is the asymmetry between tool-layer and LLM-layer failures — one recovers automatically via the agent loop's own second chance, the other doesn't and shouldn't be assumed to. Documenting that plainly (in `docs/DEBUGGING_WORKFLOWS.md`) is more useful to someone debugging a real incident than a uniform "the system degrades gracefully" claim would have been.
+
+**Limitations**: `tool_timeout` doesn't exercise a real execution-preemption mechanism, because none exists — today's tools have no real blocking I/O to time out on (see RATIONALE_PER_MILESTONE.md for why this wasn't built anyway). "Travel provider error" has no real second provider to demonstrate a fallback *to* — this project has only ever had the local synthetic data source; that specific spec example (M18's territory) isn't fully exercisable here yet.

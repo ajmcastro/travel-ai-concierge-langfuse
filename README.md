@@ -12,7 +12,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M14 — Cost and latency experiments ([progress table](#milestones))  
+> **Current milestone:** M15 — Failure and resilience laboratory ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -265,6 +265,24 @@ The spec's own **Experiment C** ("single-agent vs explicit planning step"): comp
 
 ---
 
+## Failure and Resilience Laboratory
+
+```bash
+make fault-injection-lab
+```
+
+Controllable fault injection for the project spec's named failure modes — LLM timeout, LLM provider unavailable, malformed model output, tool exception, tool timeout, no search results, Langfuse unavailable — run through the real agent graph, no server needed. Deliberately not a global `Settings` toggle (a real deployment footgun): `faults.py`'s `FaultInjectingProvider`/`make_failing_tool()` are explicit, scoped wrappers, swapped in and restored the same way [Cost and Latency Experiments](#cost-and-latency-experiments)' `UsageTrackingProvider` already is.
+
+**The core finding**: tool-layer faults (tool exception, tool timeout, malformed model output) get a real second chance — `tools_node` (Milestone 6) turns the failure into a "tool" result, and the agent's next LLM call produces a coherent answer. **HTTP 200.** LLM-layer faults (timeout, provider unavailable) have no equivalent recovery — the LLM *is* the thing making decisions. **HTTP 500**, a clean failure (no hang, no crash), not a recovered one. No automatic LLM-call retry was added — real scope creep on a shared code path the spec doesn't ask for.
+
+**A real bug found and fixed**: reading Langfuse's own SDK source (not assuming) showed it never marks a span `level="ERROR"` on its own when an exception passes through it. `AnthropicProvider`/`MockProvider` previously only got error-marked at the *root* trace — the specific `llm_call` generation span that actually failed showed nothing. Both now mark their own generation span before re-raising, the same pattern `tools_node` already used since Milestone 6.
+
+**The single most emphasized resilience claim in the spec, finally given a real test**: `tests/integration/test_langfuse_unavailable.py` points `LANGFUSE_HOST` at an unreachable local port and confirms `/chat` still returns 200 in under 2 seconds — ADR-004's "observability must not be a hard runtime dependency" claim had never actually been tested end-to-end before this milestone.
+
+Full runbook, built from this script's real output: [docs/DEBUGGING_WORKFLOWS.md](docs/DEBUGGING_WORKFLOWS.md).
+
+---
+
 ## Chat UI
 
 ```bash
@@ -344,6 +362,7 @@ src/travel_ai_concierge/
 ├── providers/llm/   — LLM provider abstraction ✅ (Milestone 2, tool-calling added M5): Mock, Anthropic
 ├── conversation/    — In-memory per-session conversation store ✅ (Milestone 7), turn lookup by message_id (Milestone 12)
 ├── prompts.py       — Langfuse Prompt Management fetch + local fallback ✅ (Milestone 8)
+├── faults.py        — Controllable fault injection: FaultInjectingProvider, make_failing_tool() ✅ (Milestone 15)
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
 ├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5)
@@ -365,6 +384,7 @@ data/
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | See the current system diagram, trace structure, and component responsibilities |
 | [docs/TRACE_DESIGN.md](docs/TRACE_DESIGN.md) | Understand the naming/tags/metadata/version/error-level taxonomy, and see a real good-vs-poor trace design example |
+| [docs/DEBUGGING_WORKFLOWS.md](docs/DEBUGGING_WORKFLOWS.md) | Diagnose a real failure using Langfuse trace data — a practical runbook per fault type, built from real fault-injection output |
 | [docs/langfuse.md](docs/langfuse.md) | Understand or troubleshoot the self-hosted Langfuse stack — services, ports, credentials |
 | [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) | Understand *why* a milestone was built the way it was, not just what it does |
 | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) | See what was actually tried and measured, including surprises and dead ends |
@@ -392,7 +412,8 @@ data/
 | M12 | Human feedback ✅ |
 | M13 | Agent trajectory evaluation ✅ |
 | M14 | Cost and latency experiments ✅ |
-| M15–M21 | Failure & resilience, debugging exercise, regression detection, optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
+| M15 | Failure and resilience laboratory ✅ |
+| M16–M21 | Observability-driven debugging exercise, regression detection, optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
 
 ---
 

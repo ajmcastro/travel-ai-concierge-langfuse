@@ -92,7 +92,20 @@ class AnthropicProvider:
             if tools:
                 kwargs["tools"] = _to_anthropic_tools(tools)
 
-            response = await self._client.messages.create(**kwargs)
+            # Milestone 15: without this try/except, a raised exception here
+            # (a real timeout, a connection failure) exits the `with` block
+            # above with the generation span never marked — confirmed by
+            # reading Langfuse's own start_as_current_observation source: it
+            # only has a bare try/finally, no except, so it never sets
+            # level="ERROR" on our behalf. Only the root trace (chat.py's own
+            # try/except) would show anything went wrong; this specific
+            # generation would just end abruptly with no explanation. See
+            # docs/DEBUGGING_WORKFLOWS.md.
+            try:
+                response = await self._client.messages.create(**kwargs)
+            except Exception as exc:
+                generation.update(level="ERROR", status_message=str(exc))
+                raise
 
             text = "".join(block.text for block in response.content if block.type == "text")
             tool_calls = [

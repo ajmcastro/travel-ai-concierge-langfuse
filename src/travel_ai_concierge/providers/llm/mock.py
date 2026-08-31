@@ -40,7 +40,17 @@ class MockProvider:
             model=self.model,
             input=[m.model_dump() for m in messages],
         ) as generation:
-            content, tool_calls = self._decide(messages, tools)
+            # Milestone 15: same reasoning as AnthropicProvider's own
+            # try/except — `_decide()` can't currently raise on its own, but
+            # a `FaultInjectingProvider` wrapping this one (llm_malformed_output)
+            # still calls through to real MockProvider.complete() first, so
+            # keeping both providers' error-marking behavior identical matters
+            # for a consistent demo — see faults.py and docs/DEBUGGING_WORKFLOWS.md.
+            try:
+                content, tool_calls = self._decide(messages, tools)
+            except Exception as exc:
+                generation.update(level="ERROR", status_message=str(exc))
+                raise
 
             usage = Usage(
                 input_tokens=sum(len(m.content.split()) for m in messages),

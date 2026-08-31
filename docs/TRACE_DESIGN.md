@@ -96,6 +96,19 @@ Two places set it in this project:
   hallucinated tool name, or a call the LLM made with missing/malformed
   arguments) and marks the `execute_tools` span `level="ERROR"` with a
   `status_message` naming which call(s) failed and why.
+- **(Milestone 15)** `providers/llm/anthropic_provider.py` and `mock.py`
+  now wrap their own completion call in `try/except`, marking the `llm_call`
+  generation span itself `level="ERROR"` before re-raising. This one was a
+  real, previously-unnoticed gap: the two bullets above were the *only*
+  places this project set `level` explicitly, so a raised exception during
+  the LLM call itself left that specific generation span with no error
+  marking at all — only the root trace (via `chat.py`'s own handling above)
+  explained anything went wrong. Found by reading Langfuse's
+  `start_as_current_observation` source directly and confirming the first
+  sentence of this section applies here too: nothing marks a span `ERROR`
+  automatically, including this SDK, ever. See
+  [DEBUGGING_WORKFLOWS.md](DEBUGGING_WORKFLOWS.md) for what this looks like
+  in a real trace.
 
 ## 4. Good vs. poor trace design — a real before/after
 

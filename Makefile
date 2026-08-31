@@ -8,6 +8,7 @@
         seed-prompts prompts-smoke-test \
         sync-eval-dataset experiment-prompt-v1 experiment-prompt-v2 \
         cost-latency-experiment \
+        fault-injection-lab \
         clean
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -145,6 +146,9 @@ experiment-prompt-v2:  ## Run the eval dataset as a Langfuse experiment against 
 
 cost-latency-experiment:  ## Compare single-step vs multi-step agent on quality, p50/p95 latency, tokens, cost
 	uv run python scripts/run_cost_latency_experiment.py
+
+fault-injection-lab:  ## Inject each spec fault type, observe traces, verify graceful degradation
+	uv run python scripts/fault_injection_lab.py
 
 # ── Housekeeping ──────────────────────────────────────────────────────────────
 
