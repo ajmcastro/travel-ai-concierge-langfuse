@@ -31,15 +31,19 @@ from travel_ai_concierge.evaluation import (
     EVALUATORS,
     CaseJudgment,
     CaseReport,
+    build_trajectory_reports,
     get_judge_provider,
     judge_to_machine_readable,
     load_dataset,
     render_human_readable,
     render_judge_summary,
+    render_trajectory_summary,
     run_case,
     summarize,
     summarize_judgments,
+    summarize_trajectories,
     to_machine_readable,
+    trajectory_to_machine_readable,
 )
 from travel_ai_concierge.observability import get_langfuse_client
 from travel_ai_concierge.providers.llm import get_llm_provider
@@ -47,6 +51,9 @@ from travel_ai_concierge.providers.llm import get_llm_provider
 RESULTS_PATH = Path(__file__).resolve().parents[1] / "data" / "evaluation" / "results" / "latest.json"
 JUDGE_RESULTS_PATH = (
     Path(__file__).resolve().parents[1] / "data" / "evaluation" / "results" / "latest-judged.json"
+)
+TRAJECTORY_RESULTS_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "evaluation" / "results" / "latest-trajectory.json"
 )
 
 
@@ -101,6 +108,18 @@ async def _main(ci: bool, with_judge: bool) -> int:
         )
     )
     print(f"\nMachine-readable report: {RESULTS_PATH}")
+
+    # Milestone 13: always computed, unlike --with-judge — no LLM call, no
+    # extra cost, purely derived from data _run_all() already collected.
+    trajectory_reports = build_trajectory_reports(reports)
+    trajectory_summary = summarize_trajectories(trajectory_reports)
+    TRAJECTORY_RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    TRAJECTORY_RESULTS_PATH.write_text(
+        json.dumps(trajectory_to_machine_readable(trajectory_reports, trajectory_summary), indent=2)
+    )
+    print()
+    print(render_trajectory_summary(trajectory_reports, trajectory_summary))
+    print(f"\nMachine-readable trajectory report: {TRAJECTORY_RESULTS_PATH}")
 
     if with_judge:
         if settings.judge_provider != "fake":

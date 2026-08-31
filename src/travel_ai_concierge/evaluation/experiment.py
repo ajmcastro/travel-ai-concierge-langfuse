@@ -28,6 +28,7 @@ from travel_ai_concierge.evaluation.judge import get_judge_provider
 from travel_ai_concierge.evaluation.langfuse_sync import DATASET_NAME
 from travel_ai_concierge.evaluation.models import CaseResult, EvaluationCase
 from travel_ai_concierge.evaluation.runner import run_case
+from travel_ai_concierge.evaluation.trajectory import compute_trajectory_metrics
 from travel_ai_concierge.observability import get_langfuse_client
 
 
@@ -83,6 +84,42 @@ def _adapt_evaluator(evaluator: Evaluator) -> EvaluatorFunction:
     return adapted
 
 
+def _trajectory_evaluator(
+    *, input: Any, output: Any, expected_output: Any, metadata: Any, **kwargs: object
+) -> list[Evaluation]:
+    """Milestone 13: trajectory.py's metrics, pushed as extra Evaluations on
+    the same dataset run — unconditional (like the Layer 1 adapters above),
+    not opt-in like `_judge_evaluator`, because it costs nothing extra: no
+    LLM call, purely derived from data `_task` already collected.
+    `tool_precision` is omitted when `None` (no tool was called at all —
+    "precision of zero calls" is undefined, not zero), the same
+    skip-rather-than-fail principle `_adapt_evaluator` already uses.
+    """
+    case = _case_from_parts(input, expected_output, metadata)
+    result = CaseResult(**output)
+    trajectory = compute_trajectory_metrics(case, result)
+
+    evaluations = [
+        Evaluation(name="trajectory_tool_recall", value=trajectory.tool_recall),
+        Evaluation(name="trajectory_agent_steps", value=float(trajectory.agent_steps)),
+        Evaluation(
+            name="trajectory_healthy",
+            value=1.0 if trajectory.is_healthy else 0.0,
+            comment=(
+                f"missing={trajectory.missing_tools}, unnecessary={trajectory.unnecessary_tools}, "
+                f"repeated={trajectory.repeated_tools}"
+                if not trajectory.is_healthy
+                else None
+            ),
+        ),
+    ]
+    if trajectory.tool_precision is not None:
+        evaluations.append(
+            Evaluation(name="trajectory_tool_precision", value=trajectory.tool_precision)
+        )
+    return evaluations
+
+
 async def _judge_evaluator(
     *, input: Any, output: Any, expected_output: Any, metadata: Any, **kwargs: object
 ) -> list[Evaluation]:
@@ -110,6 +147,7 @@ def run_named_experiment(
     client = get_langfuse_client()
     dataset = client.get_dataset(dataset_name)
     evaluators: list[EvaluatorFunction] = [_adapt_evaluator(evaluator) for evaluator in EVALUATORS]
+    evaluators.append(_trajectory_evaluator)
     if with_judge:
         evaluators.append(_judge_evaluator)
     result = dataset.run_experiment(

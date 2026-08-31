@@ -17,6 +17,7 @@ from travel_ai_concierge.evaluation.experiment import (
     _adapt_evaluator,
     _case_from_parts,
     _judge_evaluator,
+    _trajectory_evaluator,
 )
 from travel_ai_concierge.evaluation.models import CaseResult, EvaluatorResult
 
@@ -105,6 +106,48 @@ def test_adapt_evaluator_maps_skip_to_empty_list():
     )
 
     assert evaluations == []
+
+
+def test_trajectory_evaluator_reports_recall_steps_and_health():
+    evaluations = _trajectory_evaluator(
+        input={"message": "find me a hotel"},
+        output=_case_result_dict(),
+        expected_output={"expected_tools": []},
+        metadata={"case_id": "c1", "query_class": "test"},
+    )
+
+    names = {e.name for e in evaluations}
+    assert "trajectory_tool_recall" in names
+    assert "trajectory_agent_steps" in names
+    assert "trajectory_healthy" in names
+    # no tool was called at all in _case_result_dict()'s fixture, so
+    # precision is undefined and must not appear as a fabricated 0.0
+    assert "trajectory_tool_precision" not in names
+
+
+def test_trajectory_evaluator_includes_precision_and_a_comment_when_unhealthy():
+    output = CaseResult(
+        case_id="c1",
+        query_class="test",
+        trace_id="trace-1",
+        tool_calls=["search_destinations"],
+        tool_arguments_by_name={},
+        tool_result_texts=[],
+        final_response="hi",
+        iterations=1,
+    ).model_dump()
+
+    evaluations = _trajectory_evaluator(
+        input={"message": "find me a hotel"},
+        output=output,
+        expected_output={"expected_tools": ["search_hotels"]},
+        metadata={"case_id": "c1", "query_class": "test"},
+    )
+
+    by_name = {e.name: e for e in evaluations}
+    assert by_name["trajectory_tool_precision"].value == 0.0
+    assert by_name["trajectory_healthy"].value == 0.0
+    assert by_name["trajectory_healthy"].comment is not None
 
 
 @pytest.fixture(autouse=True)

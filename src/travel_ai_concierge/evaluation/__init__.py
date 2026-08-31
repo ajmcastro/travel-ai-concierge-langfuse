@@ -27,6 +27,20 @@ from travel_ai_concierge.evaluation.report import (
     to_machine_readable,
 )
 from travel_ai_concierge.evaluation.runner import run_case
+from travel_ai_concierge.evaluation.trajectory import TrajectoryMetrics, compute_trajectory_metrics
+from travel_ai_concierge.evaluation.trajectory_report import TrajectoryCaseReport
+from travel_ai_concierge.evaluation.trajectory_report import (
+    build_trajectory_reports as build_trajectory_reports,
+)
+from travel_ai_concierge.evaluation.trajectory_report import (
+    render_trajectory_summary as render_trajectory_summary,
+)
+from travel_ai_concierge.evaluation.trajectory_report import (
+    summarize_trajectories as summarize_trajectories,
+)
+from travel_ai_concierge.evaluation.trajectory_report import (
+    to_machine_readable as trajectory_to_machine_readable,
+)
 
 __all__ = [
     "DATASET_NAME",
@@ -40,15 +54,22 @@ __all__ = [
     "JudgeParseError",
     "JudgeProvider",
     "JudgmentResult",
+    "TrajectoryCaseReport",
+    "TrajectoryMetrics",
+    "build_trajectory_reports",
+    "compute_trajectory_metrics",
     "get_judge_provider",
     "judge_to_machine_readable",
     "load_dataset",
     "render_human_readable",
     "render_judge_summary",
+    "render_trajectory_summary",
     "run_case",
     "run_named_experiment",
     "summarize",
     "summarize_judgments",
+    "summarize_trajectories",
     "sync_dataset",
     "to_machine_readable",
+    "trajectory_to_machine_readable",
 ]

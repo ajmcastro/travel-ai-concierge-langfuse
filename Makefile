@@ -114,7 +114,7 @@ tools-smoke-test:  ## Call the travel tools directly and print real Langfuse too
 generate-eval-dataset:  ## (Re)write data/evaluation/cases.json (Milestone 9)
 	uv run python scripts/generate_evaluation_dataset.py
 
-evaluate:  ## Run the deterministic evaluation suite (human + machine-readable report)
+evaluate:  ## Run the deterministic evaluation suite + trajectory report (human + machine-readable)
 	uv run python scripts/run_evaluation.py
 
 eval-ci:  ## Run evaluation, exit non-zero if a case crashed (not yet a regression gate — see Milestone 17)

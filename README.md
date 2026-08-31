@@ -12,7 +12,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M12 — Human feedback ([progress table](#milestones))  
+> **Current milestone:** M13 — Agent trajectory evaluation ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -202,6 +202,8 @@ Five deterministic (Layer 1 — no LLM judge here, that's [below](#llm-as-judge)
 
 Each case runs as a real Langfuse trace, tagged `evaluation` plus its query class — inspectable exactly like production traffic, not a hidden side process.
 
+`make evaluate` also prints an agent trajectory report alongside this one, at no extra cost — see [Agent Trajectory Evaluation](#agent-trajectory-evaluation) below.
+
 ---
 
 ## Langfuse Datasets and Experiments
@@ -212,7 +214,7 @@ make experiment-prompt-v1   # run it — PROMPT_LABEL=production, run_name="prom
 make experiment-prompt-v2   # run it — PROMPT_LABEL=staging,   run_name="prompt-v2"
 ```
 
-Since Milestone 10, the exact same dataset from [Evaluation](#evaluation) above can also be published to a real Langfuse Dataset (`travel-concierge-eval-cases`, upserted by case id — safe to re-run after editing `cases.json`) and run as a named, comparable experiment, using the Langfuse SDK's own `run_experiment()` API rather than anything hand-rolled. `make experiment-prompt-v1`/`-v2` is the spec's own "Experiment A" worked example: the same 39 cases, same evaluators, two different `PROMPT_LABEL`s, two `run_name`s on the *same* dataset — open the printed `dataset_run_url` to compare them side by side natively in Langfuse.
+Since Milestone 10, the exact same dataset from [Evaluation](#evaluation) above can also be published to a real Langfuse Dataset (`travel-concierge-eval-cases`, upserted by case id — safe to re-run after editing `cases.json`) and run as a named, comparable experiment, using the Langfuse SDK's own `run_experiment()` API rather than anything hand-rolled. `make experiment-prompt-v1`/`-v2` is the spec's own "Experiment A" worked example: the same 39 cases, same Layer 1 evaluators, two different `PROMPT_LABEL`s, two `run_name`s on the *same* dataset — open the printed `dataset_run_url` to compare them side by side natively in Langfuse. Since Milestone 13, every run also pushes `trajectory_*` Evaluations (see [Agent Trajectory Evaluation](#agent-trajectory-evaluation) below) unconditionally, alongside Layer 1's own scores.
 
 Quality scores are pushed to Langfuse automatically by the SDK (pass→1.0/fail→0.0/skip→no score, so out-of-scope checks don't drag down the average). Cost and token usage are **not** recomputed here — Langfuse already captures them per generation and shows them in that same comparison view; duplicating that arithmetic locally isn't this milestone's job (see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-10--langfuse-datasets-and-experiments)).
 
@@ -232,6 +234,18 @@ Since Milestone 11, cases can also be scored qualitatively — relevance, helpfu
 **Not an independent judge**, and said so plainly rather than glossed over: this project has one real LLM vendor, so the real judge is Anthropic judging Anthropic's own output family — not the "independent model family" the spec asks to prefer where possible. `JUDGE_MODEL` is a separate setting from `LLM_MODEL` as a partial mitigation (a different capability tier can judge), not a fix. Self-preference/verbosity bias and stochasticity (Anthropic calls here never set `temperature` — there's no such parameter in the installed SDK) are documented, not controlled for — see [docs/architecture.md](docs/architecture.md)'s "LLM-as-Judge" section for the full list, which the project spec explicitly requires.
 
 A malformed or out-of-range judge response raises rather than silently falling back to a placeholder score — "do not blindly trust LLM-as-judge scores" applies to a broken parse too.
+
+---
+
+## Agent Trajectory Evaluation
+
+```bash
+make evaluate   # now also prints + saves a trajectory report, no extra flag needed
+```
+
+Final-answer checks alone can't tell you *how* the agent got there — an agent that calls the wrong tool, calls one twice, or skips a needed clarification can still produce text that passes every text-quality check. Since Milestone 13, every evaluation run also computes `tool_precision`/`tool_recall` (over the unique tools called — a correct-but-repeated call doesn't hurt either score, `repeated_tool_calls` catches that separately), missing/unnecessary/repeated tool calls, `agent_steps`, and clarification correctness in *both* directions (Layer 1 only ever checked "clarified when expected"; this adds "did NOT clarify unnecessarily"). Unlike the judge, this costs nothing extra (no LLM call) — it's computed unconditionally on every `make evaluate`/`eval-ci`/`evaluate-judged` run and pushed onto every Langfuse experiment run too, no new flag or Makefile target.
+
+Each case is classified against Layer 1's own text-quality evaluators as `aligned`, **good answer, poor trajectory**, or **poor answer, good trajectory** — the project spec's own two claims, both genuinely demonstrated: re-running the evaluation and reading the failures by hand (before writing any of this) found two already-existing dataset cases (`requires-clarification-002`, `impossible-constraint-001`) where `MockProvider` calls an unnecessary tool yet still produces text that passes every text-quality check — good answer, poor trajectory, live, from the unmodified dataset. The inverse, poor answer despite a *correct* trajectory, cannot occur under Mock (confirmed empirically: its text is always derived directly from whatever it just did, so a correct trajectory and a healthy answer are the same event) — demonstrated instead with one explicitly hand-built fixture in `tests/unit/test_trajectory.py`. Full account in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) and [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-13--agent-trajectory-evaluation).
 
 ---
 
@@ -317,7 +331,7 @@ src/travel_ai_concierge/
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
 ├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5)
-└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10), LLM-as-judge ✅ (Milestone 11)
+└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10), LLM-as-judge ✅ (Milestone 11), trajectory metrics + final-answer comparison ✅ (Milestone 13)
 
 ui/
 └── streamlit_app.py — Chat UI ✅ (Milestone 3), talks to the API over HTTP only
@@ -360,7 +374,8 @@ data/
 | M10 | Langfuse datasets and experiments ✅ |
 | M11 | LLM-as-judge ✅ |
 | M12 | Human feedback ✅ |
-| M13–M21 | Agent trajectory evaluation, cost/latency experiments, failure & resilience, debugging exercise, regression detection, optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
+| M13 | Agent trajectory evaluation ✅ |
+| M14–M21 | Cost/latency experiments, failure & resilience, debugging exercise, regression detection, optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
 
 ---
 

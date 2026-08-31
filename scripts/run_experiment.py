@@ -14,6 +14,12 @@ Usage
     # additional Evaluations on the same dataset run:
     uv run python scripts/run_experiment.py --run-name my-run --with-judge
 
+Milestone 13: every run also pushes trajectory_* Evaluations (tool_precision,
+tool_recall, agent_steps, healthy) unconditionally, no flag needed — unlike
+--with-judge, trajectory metrics cost nothing extra (no LLM call, purely
+derived from data the task already collects). See
+travel_ai_concierge.evaluation.experiment._trajectory_evaluator.
+
 Each run is linked to the same Langfuse dataset under a different run_name —
 open the printed dataset_run_url to compare runs side by side in Langfuse's
 own UI (quality scores, cost, tokens, latency per generation — all native to
