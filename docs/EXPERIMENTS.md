@@ -402,3 +402,77 @@ Every tool-layer fault (malformed output, tool exception, tool timeout) recovere
 **Interpretation**: the real, substantive finding of this milestone is the asymmetry between tool-layer and LLM-layer failures — one recovers automatically via the agent loop's own second chance, the other doesn't and shouldn't be assumed to. Documenting that plainly (in `docs/DEBUGGING_WORKFLOWS.md`) is more useful to someone debugging a real incident than a uniform "the system degrades gracefully" claim would have been.
 
 **Limitations**: `tool_timeout` doesn't exercise a real execution-preemption mechanism, because none exists — today's tools have no real blocking I/O to time out on (see RATIONALE_PER_MILESTONE.md for why this wasn't built anyway). "Travel provider error" has no real second provider to demonstrate a fallback *to* — this project has only ever had the local synthetic data source; that specific spec example (M18's territory) isn't fully exercisable here yet.
+
+---
+
+## 2026-08-31 — M16: observability-driven debugging exercise — a real agent regression, diagnosed from a Langfuse trace, then fixed and measured
+
+**Where the injected bug had to live, and why**: the spec's own examples ("poor tool description causing wrong tool selection," "prompt causing excessive tool calls," "context causing hallucination") all describe failures in an LLM's *reasoning*. This deployment has no `ANTHROPIC_API_KEY` (the same gap noted in every prior milestone's real-provider testing), so the only reasoning this repo can exercise fully offline and reproducibly is `MockProvider`'s keyword-trigger table — already documented since Milestone 1 as "a test double for reasoning, not an attempt at one." Rather than fabricate a bug nobody would actually write, the bug injected here is the realistic version *for this specific mechanism*: a naive trigger-table edit, the direct analogue of a naive prompt or tool-description edit in a real system, with the identical failure shape — an over-broad match that fires when it shouldn't.
+
+**The bug, as it would really happen**: `culture-001` ("I want a trip full of culture, museums, and history.") was already failing `tool_usage_matches_expected` — neither "hotel" nor "destination" appear in the message, so `MockProvider` never called `search_destinations` at all. A plausible fix: add `"trip"` as a second trigger keyword, copying the existing `"destination"` trigger's shape (`("search_destinations", {"tags": ["beach"]})`) verbatim.
+
+```python
+_MOCK_TOOL_TRIGGERS: dict[str, tuple[str, dict[str, object]]] = {
+    "hotel": ("search_hotels", {"destination_id": "algarve", "family_friendly": True}),
+    "destination": ("search_destinations", {"tags": ["beach"]}),
+    "trip": ("search_destinations", {"tags": ["beach"]}),   # <- the bug
+}
+```
+
+**Generating traces and running the eval**: `make evaluate` immediately after this change looked, at the aggregate level, like an *improvement* — overall Layer 1 pass count went **82 → 83** (out of 195 evaluator runs). That's the trap this milestone is really about: an aggregate pass count is not enough to catch a regression that trades one failure for a different one.
+
+Per-case diff told the real story:
+
+```
+culture-001          | tool_calls [] -> ['search_destinations']
+   tool_usage_matches_expected            fail -> pass
+   tool_arguments_satisfy_constraints     skip -> fail   (wrong tags: hardcoded ["beach"], not ["culture"])
+
+vague-request-002     | tool_calls [] -> ['search_destinations']
+   tool_usage_matches_expected            pass -> fail   (regression: unexpected tool call)
+```
+
+`vague-request-002` ("Help me plan a trip.") expects a clarifying question with **zero** tool calls — the system prompt itself says "Ask clarifying questions when important details (destination, dates, budget, travellers) are missing." The new `"trip"` trigger fired anyway. Milestone 13's trajectory metrics caught the net damage the Layer 1 aggregate hid: `average_tool_precision` dropped **0.900 → 0.864**, `total_unnecessary_tool_calls` rose **2 → 3**.
+
+**Diagnosing from a real Langfuse trace** (`make langfuse-up` already running; trace opened at `/project/travel-ai-concierge-dev/traces/<trace_id>`, tags `evaluation` + `vague_request`): the `agent` → `llm_call` generation span for this case showed
+
+```
+System:    "...Ask clarifying questions when important details
+            (destination, dates, budget, travellers) are missing..."
+User:      "Help me plan a trip."
+Assistant: [tool_calls: ['search_destinations']]
+```
+
+— the model's own decision, sitting right next to the system prompt that told it not to do this, directly contradicting it. Exactly the trace shape a real "poor tool description / overeager prompt" bug produces: the failure isn't visible as an error (`level` stays unset — nothing raised), only as a wrong decision, which is why this needs a human reading the trace, not just a `level == ERROR` filter.
+
+**The fix**: not a revert (that would just bring back `culture-001`'s original failure) — the underlying cause is that neither `"trip"` nor `"destination"` alone means "the user gave a concrete preference." The fix makes the trigger require an actual content signal, and reports it accurately instead of a hardcoded guess:
+
+```python
+_DESTINATION_TRIGGER_WORDS = ("destination", "trip")
+_KNOWN_TAGS = ("beach", "culture", "quiet", "food", "nightlife",
+               "nature", "romantic", "family", "adventure", "wine")
+
+if "search_destinations" in available and any(w in lowered for w in _DESTINATION_TRIGGER_WORDS):
+    detected_tags = [t for t in _KNOWN_TAGS if t in lowered]
+    if detected_tags:
+        # fire, with the *detected* tags
+```
+
+**Measurable improvement — re-ran the full 39-case suite, compared against the true original baseline (before the bug was ever introduced), not just against the buggy intermediate state**:
+
+```
+                                   baseline   with bug   after fix
+Layer 1 overall pass (of 195)         82         83         87
+average_tool_precision               0.900      0.864      0.905
+total_unnecessary_tool_calls           2          3          2
+total_missing_tool_calls              17         16         16
+aligned (trajectory)                  16         17         17
+```
+
+`vague-request-002` is back to byte-for-byte the same result as the original baseline (confirmed by diffing the machine-readable reports) — the injected regression is fully undone, not just masked. `culture-001` is now a full pass across all three applicable evaluators (previously a fail). Two other pre-existing failures resolved as a genuine side effect of replacing the hardcoded `["beach"]` with real tag detection: `destination-recommendation-001` and `couples-holiday-001` now report their actually-detected tags (`["food", "wine", "quiet"]` and `["romantic"]`) instead of always `["beach"]`. Verified live in Langfuse too: the fixed trace for `vague-request-002` is just `travel_concierge_turn` → `agent` → `llm_call`, output `"[mock] I heard: Help me plan a trip."` — no `execute_tools` span at all, matching the pre-bug trace shape exactly.
+
+**Tests added**: `tests/unit/test_llm_providers.py` gained three regression tests — `test_mock_provider_vague_trip_request_asks_no_tool_call` (pins the exact bug: no tag word present, no tool call), `test_mock_provider_trip_with_a_known_tag_calls_search_destinations` (pins the fix actually detecting and passing the right tag, not just suppressing the trigger), `test_mock_provider_hotel_trigger_is_unaffected_by_the_fix` (the unrelated `"hotel"` trigger — a separate, already-documented Mock limitation from Milestone 13 — is untouched by this change). 225 tests total pass (was 222).
+
+**Interpretation**: this milestone's real lesson isn't the specific bug — it's that an aggregate pass-rate number moved in the *wrong direction to notice* (up, not down) while a real regression was introduced, and only per-case diffing plus Milestone 13's trajectory metrics (`tool_precision`, `unnecessary_tool_calls`) caught it. A CI gate watching only the aggregate pass count, as Milestone 17 is about to build, would need to watch more than one number, or watch per-case results, to catch this class of regression — worth keeping in mind going into that milestone.
+
+**Limitations**: the bug and its diagnosis are both scoped to `MockProvider`'s trigger table, not the system prompt or `TOOL_SPECS`' tool descriptions — those *do* affect `AnthropicProvider`'s real reasoning, but exercising that path needs a real `ANTHROPIC_API_KEY`, unavailable in this environment (the same gap noted in Milestones 2, 5, and 14). The mechanism is different from a real prompt bug; the failure shape and the diagnostic workflow (trace shows a decision contradicting the system prompt, not an error) are the same, and would look identical in a real trace from a real model.

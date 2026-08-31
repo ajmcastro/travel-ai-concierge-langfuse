@@ -12,7 +12,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M15 — Failure and resilience laboratory ([progress table](#milestones))  
+> **Current milestone:** M16 — Observability-driven debugging exercise ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -283,6 +283,25 @@ Full runbook, built from this script's real output: [docs/DEBUGGING_WORKFLOWS.md
 
 ---
 
+## Observability-Driven Debugging
+
+A real, deliberately-injected agent regression — diagnosed from a Langfuse trace, fixed, and measured. Full write-up (with real before/after numbers and trace evidence): [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md), Milestone 16.
+
+**The bug**: `MockProvider` (`providers/llm/mock.py`, the offline stand-in for real LLM reasoning — no `ANTHROPIC_API_KEY` in this environment) got a new keyword trigger, `"trip"`, added to fix a failing eval case (`culture-001`). It worked for that case — and silently made `vague-request-002` ("Help me plan a trip.") call `search_destinations` instead of asking the clarifying question it should have, directly contradicting the system prompt's own instruction.
+
+**The trap**: `make evaluate`'s own aggregate pass count moved in the *improving* direction after the bug (82 → 83 of 195) — the new trigger fixed one case while breaking another, and the aggregate number alone couldn't tell the difference. Only per-case diffing and Milestone 13's trajectory metrics (`average_tool_precision` 0.900 → 0.864) caught the regression; the real diagnosis came from reading the actual `llm_call` generation span in Langfuse — a decision that silently contradicted the system prompt right next to it, no `level=ERROR` anywhere to filter on.
+
+**The fix**: both `"destination"` and `"trip"` now require an actual detected interest tag before firing at all, and pass the tags they actually detect instead of a hardcoded `["beach"]` — addressing the underlying cause, not just reverting the symptom. Re-running the full 39-case suite against the *original* baseline confirmed the regression was fully undone, plus two more pre-existing failures resolved as an honest side effect.
+
+```
+                                   baseline   with bug   after fix
+Layer 1 overall pass (of 195)         82         83         87
+average_tool_precision               0.900      0.864      0.905
+total_unnecessary_tool_calls           2          3          2
+```
+
+---
+
 ## Chat UI
 
 ```bash
@@ -359,7 +378,7 @@ src/travel_ai_concierge/
 ├── config/          — Pydantic Settings
 ├── api/             — FastAPI app, routes (/health, /chat, /sessions/{id}, /feedback ✅ Milestone 12), request/response schemas
 ├── agent/           — LangGraph agent/tools loop ✅ (Milestone 5): state, nodes, graph
-├── providers/llm/   — LLM provider abstraction ✅ (Milestone 2, tool-calling added M5): Mock, Anthropic
+├── providers/llm/   — LLM provider abstraction ✅ (Milestone 2, tool-calling added M5): Mock (tag-aware destination trigger fixed after a real diagnosed regression, Milestone 16), Anthropic
 ├── conversation/    — In-memory per-session conversation store ✅ (Milestone 7), turn lookup by message_id (Milestone 12)
 ├── prompts.py       — Langfuse Prompt Management fetch + local fallback ✅ (Milestone 8)
 ├── faults.py        — Controllable fault injection: FaultInjectingProvider, make_failing_tool() ✅ (Milestone 15)
@@ -413,7 +432,8 @@ data/
 | M13 | Agent trajectory evaluation ✅ |
 | M14 | Cost and latency experiments ✅ |
 | M15 | Failure and resilience laboratory ✅ |
-| M16–M21 | Observability-driven debugging exercise, regression detection, optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
+| M16 | Observability-driven debugging exercise ✅ |
+| M17–M21 | Regression detection, optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
 
 ---
 

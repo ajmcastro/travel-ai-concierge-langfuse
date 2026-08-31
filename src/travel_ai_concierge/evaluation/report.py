@@ -80,8 +80,8 @@ def render_human_readable(
         lines.append(
             "NOTE: running against MockProvider (LLM_PROVIDER=mock, the default). "
             "MockProvider is a fixed keyword-trigger table, not a reasoning system — "
-            "it never asks a clarifying question and only ever makes one of two "
-            "hardcoded tool calls, regardless of the message (see providers/llm/mock.py). "
+            "it never asks a clarifying question, and its tool selection is a simple "
+            "keyword/tag match, not real reasoning (see providers/llm/mock.py). "
             "Tool-usage, constraint, and clarification failures above are therefore "
             "expected, not evidence of a broken agent. Set LLM_PROVIDER=anthropic for "
             "a meaningful quality signal."
