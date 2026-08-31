@@ -12,7 +12,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M10 — Langfuse datasets and experiments ([progress table](#milestones))  
+> **Current milestone:** M11 — LLM-as-judge ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -196,7 +196,7 @@ make eval-ci                # same, exits 1 only if a case crashed outright
 
 Since Milestone 9, a local, deterministic evaluation harness runs 39 hand-authored test cases through the *real* agent graph — deliberately independent of Langfuse datasets at this layer (that's [below](#langfuse-datasets-and-experiments), Milestone 10, a separate optional publishing step). Cases cover all 20 query classes the project spec names — destination/hotel recommendation, family/couples holiday, budget/luxury, beach/city/culture/nightlife/quiet/food-wine, itinerary planning, vague requests, multi-constraint, needs-clarification, one-tool, multi-tool, impossible-constraint, contradictory-preferences — grounded in the real synthetic destinations/hotels, not invented data.
 
-Five deterministic (Layer 1 — no LLM judge yet, that's [Milestone 11](#milestones)) evaluators check each case: expected tool called, tool arguments satisfy the stated constraints, the response is non-empty, the response actually references what a tool returned (a groundedness *proxy*, not semantic scoring), and — where expected — a clarifying question was asked. Each evaluator can also `skip` a case it doesn't apply to, so out-of-scope checks aren't counted as failures.
+Five deterministic (Layer 1 — no LLM judge here, that's [below](#llm-as-judge), Milestone 11) evaluators check each case: expected tool called, tool arguments satisfy the stated constraints, the response is non-empty, the response actually references what a tool returned (a groundedness *proxy*, not semantic scoring), and — where expected — a clarifying question was asked. Each evaluator can also `skip` a case it doesn't apply to, so out-of-scope checks aren't counted as failures.
 
 **Read the report's own note before judging a low pass rate**: under the default `MockProvider`, most tool-usage and clarification checks fail — not because the agent is broken, but because Mock is a fixed keyword-trigger table with no real reasoning (see [providers/llm/mock.py](src/travel_ai_concierge/providers/llm/mock.py)). The dataset describes what a *real* agent should do; run with `LLM_PROVIDER=anthropic` for a meaningful signal. `make eval-ci`'s `--ci` flag is **not** a regression/baseline gate yet — that's explicitly [Milestone 17](#milestones)'s job.
 
@@ -217,6 +217,21 @@ Since Milestone 10, the exact same dataset from [Evaluation](#evaluation) above 
 Quality scores are pushed to Langfuse automatically by the SDK (pass→1.0/fail→0.0/skip→no score, so out-of-scope checks don't drag down the average). Cost and token usage are **not** recomputed here — Langfuse already captures them per generation and shows them in that same comparison view; duplicating that arithmetic locally isn't this milestone's job (see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-10--langfuse-datasets-and-experiments)).
 
 `data/evaluation/cases.json` stays the source of truth throughout — Langfuse is an execution/analysis layer here, not where test cases are authored or edited.
+
+---
+
+## LLM-as-Judge
+
+```bash
+make evaluate-judged                        # local report + judge summary (Settings.judge_provider, default "fake")
+uv run python scripts/run_experiment.py --run-name my-run --with-judge   # same, pushed to Langfuse
+```
+
+Since Milestone 11, cases can also be scored qualitatively — relevance, helpfulness, groundedness, constraint satisfaction, and (for `itinerary_planning` cases) itinerary coherence — dimensions no deterministic check can meaningfully assess. `JudgeProvider` has two implementations: `FakeJudgeProvider` (default, free, offline, deterministic — its scores are directly derived from Milestone 9's own evaluator outcomes, and every rationale says so) and `AnthropicJudgeProvider` (real, one LLM call per case, opt-in via `JUDGE_PROVIDER=anthropic`).
+
+**Not an independent judge**, and said so plainly rather than glossed over: this project has one real LLM vendor, so the real judge is Anthropic judging Anthropic's own output family — not the "independent model family" the spec asks to prefer where possible. `JUDGE_MODEL` is a separate setting from `LLM_MODEL` as a partial mitigation (a different capability tier can judge), not a fix. Self-preference/verbosity bias and stochasticity (Anthropic calls here never set `temperature` — there's no such parameter in the installed SDK) are documented, not controlled for — see [docs/architecture.md](docs/architecture.md)'s "LLM-as-Judge" section for the full list, which the project spec explicitly requires.
+
+A malformed or out-of-range judge response raises rather than silently falling back to a placeholder score — "do not blindly trust LLM-as-judge scores" applies to a broken parse too.
 
 ---
 
@@ -287,7 +302,7 @@ src/travel_ai_concierge/
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
 ├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5)
-└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10)
+└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10), LLM-as-judge ✅ (Milestone 11)
 
 ui/
 └── streamlit_app.py — Chat UI ✅ (Milestone 3), talks to the API over HTTP only
@@ -328,7 +343,8 @@ data/
 | M8 | Prompt management ✅ |
 | M9 | Evaluation framework ✅ |
 | M10 | Langfuse datasets and experiments ✅ |
-| M11–M21 | LLM-as-judge, human feedback, regression… |
+| M11 | LLM-as-judge ✅ |
+| M12–M21 | Human feedback, regression detection… |
 
 ---
 

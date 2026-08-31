@@ -77,6 +77,17 @@ class Settings(BaseSettings):
     prompt_label: str = "production"
     prompt_cache_ttl_seconds: int = 60
 
+    # Milestone 11: LLM-as-judge (Layer 2 evaluation). `judge_provider`
+    # mirrors `llm_provider`'s pattern — "fake" (default, offline, free) or
+    # "anthropic" (real, costs money/latency). `judge_model` is deliberately
+    # a *separate* setting from `llm_model`, not reused — using a different
+    # model/tier as judge than as the primary application model is the one
+    # real (partial) mitigation available for the spec's "prefer an
+    # independent judge model family" ask, since this project has no second
+    # LLM vendor implemented — see evaluation/judge.py's module docstring.
+    judge_provider: str = "fake"
+    judge_model: str = "mock"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

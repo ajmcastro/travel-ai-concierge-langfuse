@@ -22,6 +22,7 @@ that step, not of who called it or why — the same convention since M1:
 | `execute_tools` | span | `agent/nodes.py` |
 | `search_destinations` / `search_hotels` / `get_destination_information` | `tool` | `tools/travel_tools.py` |
 | `llm_call` | `generation` | `providers/llm/*.py` |
+| `llm_judge` | `evaluator` | `evaluation/judge.py` (Milestone 11) |
 
 Rule: name = the verb/noun describing the step (`execute_tools`,
 `search_hotels`), never a description of the *code path* that reached it

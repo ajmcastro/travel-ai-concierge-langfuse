@@ -4,7 +4,7 @@
         up down restart logs \
         test test-unit test-integration \
         lint format format-check typecheck check \
-        generate-data tools-smoke-test generate-eval-dataset evaluate eval-ci \
+        generate-data tools-smoke-test generate-eval-dataset evaluate eval-ci evaluate-judged \
         seed-prompts prompts-smoke-test \
         sync-eval-dataset experiment-prompt-v1 experiment-prompt-v2 \
         clean
@@ -119,6 +119,9 @@ evaluate:  ## Run the deterministic evaluation suite (human + machine-readable r
 
 eval-ci:  ## Run evaluation, exit non-zero if a case crashed (not yet a regression gate — see Milestone 17)
 	uv run python scripts/run_evaluation.py --ci
+
+evaluate-judged:  ## Same as `evaluate`, plus LLM-as-judge scores (Settings.judge_provider, default fake)
+	uv run python scripts/run_evaluation.py --with-judge
 
 # ── Prompt management (Milestone 8) ──────────────────────────────────────────
 

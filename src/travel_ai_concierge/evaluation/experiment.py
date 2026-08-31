@@ -18,13 +18,13 @@ well beyond this milestone's actual scope. See
 docs/RATIONALE_PER_MILESTONE.md (Milestone 10).
 """
 
-from collections.abc import Callable
 from typing import Any
 
 from langfuse import Evaluation
-from langfuse.experiment import ExperimentResult
+from langfuse.experiment import EvaluatorFunction, ExperimentResult
 
 from travel_ai_concierge.evaluation.evaluators import EVALUATORS, Evaluator
+from travel_ai_concierge.evaluation.judge import get_judge_provider
 from travel_ai_concierge.evaluation.langfuse_sync import DATASET_NAME
 from travel_ai_concierge.evaluation.models import CaseResult, EvaluationCase
 from travel_ai_concierge.evaluation.runner import run_case
@@ -54,7 +54,7 @@ async def _task(*, item: Any, **kwargs: object) -> dict[str, Any]:
     return result.model_dump()
 
 
-def _adapt_evaluator(evaluator: Evaluator) -> Callable[..., list[Evaluation]]:
+def _adapt_evaluator(evaluator: Evaluator) -> EvaluatorFunction:
     """Wrap one Milestone 9 evaluator as a Langfuse EvaluatorFunction.
 
     Maps pass/fail to a numeric 1.0/0.0 (so the SDK's own `.format()` can
@@ -83,17 +83,41 @@ def _adapt_evaluator(evaluator: Evaluator) -> Callable[..., list[Evaluation]]:
     return adapted
 
 
+async def _judge_evaluator(
+    *, input: Any, output: Any, expected_output: Any, metadata: Any, **kwargs: object
+) -> list[Evaluation]:
+    """Milestone 11: the same JudgeProvider used by run_evaluation.py's
+    `--with-judge`, wrapped for run_experiment() — one Evaluation per
+    dimension, prefixed `judge_` so they're visually distinct from Layer 1's
+    deterministic scores in the same dataset run.
+    """
+    case = _case_from_parts(input, expected_output, metadata)
+    result = CaseResult(**output)
+    judgments = await get_judge_provider().judge(case, result)
+    return [
+        Evaluation(name=f"judge_{j.dimension}", value=j.score, comment=j.rationale)
+        for j in judgments
+    ]
+
+
 def run_named_experiment(
-    *, run_name: str, description: str | None = None, dataset_name: str = DATASET_NAME
+    *,
+    run_name: str,
+    description: str | None = None,
+    dataset_name: str = DATASET_NAME,
+    with_judge: bool = False,
 ) -> ExperimentResult:
     client = get_langfuse_client()
     dataset = client.get_dataset(dataset_name)
+    evaluators: list[EvaluatorFunction] = [_adapt_evaluator(evaluator) for evaluator in EVALUATORS]
+    if with_judge:
+        evaluators.append(_judge_evaluator)
     result = dataset.run_experiment(
         name="Travel Concierge Evaluation",
         run_name=run_name,
         description=description,
         task=_task,
-        evaluators=[_adapt_evaluator(evaluator) for evaluator in EVALUATORS],
+        evaluators=evaluators,
     )
     client.flush()
     return result

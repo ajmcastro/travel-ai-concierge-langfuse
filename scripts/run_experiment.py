@@ -10,6 +10,10 @@ Usage
     # or directly, to name your own comparison axis:
     uv run python scripts/run_experiment.py --run-name my-run --description "..."
 
+    # Milestone 11: also push LLM-as-judge scores (judge_relevance, etc.) as
+    # additional Evaluations on the same dataset run:
+    uv run python scripts/run_experiment.py --run-name my-run --with-judge
+
 Each run is linked to the same Langfuse dataset under a different run_name —
 open the printed dataset_run_url to compare runs side by side in Langfuse's
 own UI (quality scores, cost, tokens, latency per generation — all native to
@@ -19,6 +23,7 @@ Milestone 10, for why).
 
 import argparse
 
+from travel_ai_concierge.config import get_settings
 from travel_ai_concierge.evaluation import run_named_experiment
 
 
@@ -26,9 +31,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-name", required=True, help="distinguishes this run from others on the same dataset")
     parser.add_argument("--description", default=None)
+    parser.add_argument(
+        "--with-judge",
+        action="store_true",
+        help="also push LLM-as-judge scores (Settings.judge_provider, default 'fake') as additional Evaluations",
+    )
     args = parser.parse_args()
 
-    result = run_named_experiment(run_name=args.run_name, description=args.description)
+    if args.with_judge and get_settings().judge_provider != "fake":
+        print("Running a real judge over every dataset item — real latency/cost, not the free default.")
+
+    result = run_named_experiment(run_name=args.run_name, description=args.description, with_judge=args.with_judge)
     print(result.format())
     if result.dataset_run_url:
         print(f"\nCompare this run against others in Langfuse: {result.dataset_run_url}")

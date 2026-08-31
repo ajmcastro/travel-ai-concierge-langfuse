@@ -3,8 +3,9 @@
 
 Usage
 -----
-    make evaluate    # human-readable + machine-readable (JSON) report
-    make eval-ci     # same, but exits 1 if any case crashed outright
+    make evaluate         # human-readable + machine-readable (JSON) report
+    make eval-ci          # same, but exits 1 if any case crashed outright
+    make evaluate-judged  # also score every case with the configured JudgeProvider (Milestone 11)
 
 `--ci` is NOT a baseline/regression gate — that's Milestone 17's explicit
 job ("Establish a baseline... `make eval-ci` with configurable regression
@@ -12,6 +13,11 @@ thresholds", per the spec's Regression Testing section). Here it only fails
 loudly on a broken pipeline (an exception raised while running a case),
 which is a meaningfully different, and much simpler, signal than "did
 quality regress."
+
+`--with-judge` defaults to `Settings.judge_provider="fake"` (free, offline,
+deterministic — see evaluation/judge.py). Set `JUDGE_PROVIDER=anthropic` for
+a real judge — costs real latency/money across all 39 cases; read
+evaluation/judge.py's module docstring for the documented limitations first.
 """
 
 import argparse
@@ -23,17 +29,25 @@ from pathlib import Path
 from travel_ai_concierge.config import get_settings
 from travel_ai_concierge.evaluation import (
     EVALUATORS,
+    CaseJudgment,
     CaseReport,
+    get_judge_provider,
+    judge_to_machine_readable,
     load_dataset,
     render_human_readable,
+    render_judge_summary,
     run_case,
     summarize,
+    summarize_judgments,
     to_machine_readable,
 )
 from travel_ai_concierge.observability import get_langfuse_client
 from travel_ai_concierge.providers.llm import get_llm_provider
 
 RESULTS_PATH = Path(__file__).resolve().parents[1] / "data" / "evaluation" / "results" / "latest.json"
+JUDGE_RESULTS_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "evaluation" / "results" / "latest-judged.json"
+)
 
 
 async def _run_all() -> tuple[list[CaseReport], int]:
@@ -55,12 +69,22 @@ async def _run_all() -> tuple[list[CaseReport], int]:
     return reports, crashed
 
 
-async def _main(ci: bool) -> int:
+async def _run_judge(reports: list[CaseReport]) -> list[CaseJudgment]:
+    judge = get_judge_provider()
+    case_judgments = []
+    for report in reports:
+        judgments = await judge.judge(report.case, report.result)
+        case_judgments.append(
+            CaseJudgment(case_id=report.case.id, query_class=report.case.query_class, judgments=judgments)
+        )
+    return case_judgments
+
+
+async def _main(ci: bool, with_judge: bool) -> int:
     settings = get_settings()
     provider = get_llm_provider()
 
     reports, crashed = await _run_all()
-    get_langfuse_client().flush()
 
     summary = summarize(reports)
 
@@ -78,6 +102,27 @@ async def _main(ci: bool) -> int:
     )
     print(f"\nMachine-readable report: {RESULTS_PATH}")
 
+    if with_judge:
+        if settings.judge_provider != "fake":
+            print(
+                f"\nRunning judge_provider={settings.judge_provider!r} "
+                f"(judge_model={settings.judge_model!r}) over {len(reports)} cases — "
+                "real latency/cost, not the free default.",
+                file=sys.stderr,
+            )
+        judge = get_judge_provider()
+        case_judgments = await _run_judge(reports)
+        judge_summary = summarize_judgments(case_judgments)
+
+        JUDGE_RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        JUDGE_RESULTS_PATH.write_text(json.dumps(judge_to_machine_readable(case_judgments, judge_summary), indent=2))
+
+        print()
+        print(render_judge_summary(case_judgments, judge_summary, judge_model=judge.model))
+        print(f"\nMachine-readable judge report: {JUDGE_RESULTS_PATH}")
+
+    get_langfuse_client().flush()
+
     if crashed:
         print(f"\n{crashed} case(s) crashed — see stderr above.", file=sys.stderr)
         if ci:
@@ -92,8 +137,13 @@ def main() -> int:
         action="store_true",
         help="exit non-zero if any case crashed (not a regression/baseline gate — see Milestone 17)",
     )
+    parser.add_argument(
+        "--with-judge",
+        action="store_true",
+        help="also score every case with the configured JudgeProvider (Settings.judge_provider, default 'fake')",
+    )
     args = parser.parse_args()
-    return asyncio.run(_main(ci=args.ci))
+    return asyncio.run(_main(ci=args.ci, with_judge=args.with_judge))
 
 
 if __name__ == "__main__":

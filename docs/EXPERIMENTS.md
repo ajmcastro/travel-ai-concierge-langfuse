@@ -207,3 +207,22 @@ The full 39-case run against `MockProvider` reproduced the exact same explicable
 - **Dataset item ids are unique per Langfuse *project*, not per dataset** — confirmed the hard way, not from documentation. The integration test's first version used a fixed item id (`"hotel-case"`) alongside a randomized *dataset* name per run; running the test twice produced a real `409 LangfuseConflictError` from the actual API on the second run — `"item ids are unique per project across datasets... Use a different id or target dataset <id>"` — because the id collided with the leftover item from the first run's now-orphaned dataset. Fixed by suffixing item ids with the same per-run random token used for the dataset name.
 
 **Limitations**: `experiment-prompt-v1`/`-v2` only demonstrate the *mechanism* under `MockProvider`, same limitation as M9's local report — both runs score identically since Mock never reads prompt content. A real prompt-v1-vs-v2 quality comparison needs `LLM_PROVIDER=anthropic`, not exercised here (no `ANTHROPIC_API_KEY` configured in this environment, consistent with every prior milestone's real-provider gap).
+
+---
+
+## 2026-08-31 — M11: FakeJudgeProvider's derived scores actually reflect the underlying evaluator signal, verified end-to-end in both evaluation surfaces
+
+**Hypothesis**: `FakeJudgeProvider`'s scores, though fake, should still be *coherent* with Milestone 9's own evaluator outcomes (since that's literally what they're derived from) — and the same `JudgeProvider` should produce identical scores whether reached through `make evaluate-judged` (the local report) or `run_experiment.py --with-judge` (the Langfuse-linked run), since both call the exact same `judge()` method.
+
+**Configuration**:
+- `uv run python scripts/run_evaluation.py --with-judge` — full 39-case run, default `judge_provider="fake"`.
+- `uv run python scripts/run_experiment.py --run-name judge-smoke-test --with-judge` — same 39 cases, same fake judge, via the Langfuse experiment path instead.
+- Directly inspected `data/evaluation/results/latest-judged.json` for the raw per-case rationale strings.
+
+**Result**: Pass, and the two surfaces agreed exactly, as they should given they share one code path — both runs' average scores: `relevance 3.54`, `helpfulness 5.00`, `groundedness 5.00`, `constraint_satisfaction 4.15`, `itinerary_coherence 3.00 (n=2)`. `itinerary_coherence`'s count of exactly 2 confirms the dimension-applicability filter is working (only the dataset's 2 `itinerary_planning` cases got it, not all 39). `helpfulness`/`groundedness` landing at a flat 5.00 makes sense once traced back to their derivation: `response_is_nonempty` passes on effectively every case (MockProvider never returns a blank response) and `response_references_tool_result` only ever fails when a tool actually ran and ignored its own results, which doesn't happen in this dataset under Mock — so a perfect average here is the *expected* shape of the derivation, not a red flag.
+
+**Interpretation**: because `FakeJudgeProvider`'s rationale field names the exact M9 evaluator + outcome it derived each score from (e.g. `"...'tool_usage_matches_expected' (pass), 'response_references_tool_result' (pass)..."`), a single case's judged output is independently auditable against the very evaluators it's built from — the same "explain, don't just assert" discipline this project has used for every other test double (`MockProvider`'s own docstring, M9's evaluator `detail` strings).
+
+**Surprises**: none — this was designed to be traceable and it was, on the first real run.
+
+**Limitations**: this run says nothing about whether the fake judge's *derivation logic* is a good proxy for what a real judge would say (it isn't meant to be — see `evaluation/judge.py`'s own docstring). The real `AnthropicJudgeProvider` — including the stochasticity check in `tests/integration/test_llm_judge.py` — is not exercised in this environment (no `ANTHROPIC_API_KEY` configured, the same gap as every prior milestone's real-provider testing).

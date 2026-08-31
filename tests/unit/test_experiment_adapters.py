@@ -1,13 +1,23 @@
-"""Tests for evaluation/experiment.py's adapter layer (Milestone 10).
+"""Tests for evaluation/experiment.py's adapter layer (Milestone 10, judge
+adapter added Milestone 11).
 
 Fully offline: no Langfuse dataset/experiment calls at all — those have no
 local fallback (unlike prompts) and are covered instead by
 tests/integration/test_langfuse_dataset_experiment.py. This file only tests
-the pure mapping logic: dict <-> EvaluationCase, and wrapping an M9
-EvaluatorResult as the SDK's Evaluation shape.
+the pure mapping logic: dict <-> EvaluationCase, wrapping an M9
+EvaluatorResult as the SDK's Evaluation shape, and (M11) wrapping a
+JudgeProvider's judgments the same way — using the real, deterministic
+FakeJudgeProvider, not a hand-rolled stub, so the test exercises the actual
+adapter/provider boundary.
 """
 
-from travel_ai_concierge.evaluation.experiment import _adapt_evaluator, _case_from_parts
+import pytest
+
+from travel_ai_concierge.evaluation.experiment import (
+    _adapt_evaluator,
+    _case_from_parts,
+    _judge_evaluator,
+)
 from travel_ai_concierge.evaluation.models import CaseResult, EvaluatorResult
 
 
@@ -95,3 +105,48 @@ def test_adapt_evaluator_maps_skip_to_empty_list():
     )
 
     assert evaluations == []
+
+
+@pytest.fixture(autouse=True)
+def _judge_provider_is_fake(monkeypatch: pytest.MonkeyPatch):
+    # Guarantee offline behavior regardless of ambient JUDGE_PROVIDER env
+    # state — same reasoning _client() helpers elsewhere explicitly set
+    # LLM_PROVIDER=mock rather than relying on the default.
+    from travel_ai_concierge.config import get_settings
+    from travel_ai_concierge.evaluation.judge import get_judge_provider
+
+    monkeypatch.setenv("JUDGE_PROVIDER", "fake")
+    get_settings.cache_clear()
+    get_judge_provider.cache_clear()
+    yield
+    get_settings.cache_clear()
+    get_judge_provider.cache_clear()
+
+
+async def test_judge_evaluator_returns_one_evaluation_per_core_dimension():
+    evaluations = await _judge_evaluator(
+        input={"message": "find me a hotel"},
+        output=_case_result_dict(),
+        expected_output={"expected_tools": []},
+        metadata={"case_id": "c1", "query_class": "budget"},
+    )
+
+    assert {e.name for e in evaluations} == {
+        "judge_relevance",
+        "judge_helpfulness",
+        "judge_groundedness",
+        "judge_constraint_satisfaction",
+    }
+    assert all(1 <= e.value <= 5 for e in evaluations)
+    assert all(e.comment for e in evaluations)
+
+
+async def test_judge_evaluator_includes_itinerary_coherence_for_that_query_class():
+    evaluations = await _judge_evaluator(
+        input={"message": "plan my trip"},
+        output=_case_result_dict(),
+        expected_output={},
+        metadata={"case_id": "c1", "query_class": "itinerary_planning"},
+    )
+
+    assert "judge_itinerary_coherence" in {e.name for e in evaluations}
