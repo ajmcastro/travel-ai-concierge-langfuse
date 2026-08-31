@@ -37,6 +37,29 @@ def _new_user_id() -> str:
     return f"anon-{uuid.uuid4().hex[:8]}"
 
 
+def _submit_feedback(*, message_id: str, thumbs_up: bool, comment: str | None = None) -> bool:
+    """Milestone 12: POST /feedback. Returns whether it actually recorded —
+    a non-critical convenience failing (API unreachable, etc.) shouldn't
+    look like a crash to the user, just a quiet toast (same reasoning as the
+    sidebar's own trace-link lookup, Milestone 3).
+    """
+    try:
+        response = httpx2.post(
+            f"{settings.api_base_url}/feedback",
+            json={
+                "session_id": st.session_state.session_id,
+                "message_id": message_id,
+                "thumbs_up": thumbs_up,
+                "comment": comment,
+            },
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        return True
+    except httpx2.HTTPError:
+        return False
+
+
 if "session_id" not in st.session_state:
     st.session_state.session_id = _new_session_id()
 if "user_id" not in st.session_state:
@@ -98,10 +121,47 @@ with st.sidebar:
 for i, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.write(message["content"])
-        if message["role"] == "assistant":
+        if message["role"] == "assistant" and message.get("message_id"):
+            # st.feedback is a *stateful* widget — once clicked, it returns
+            # its selection on every rerun, not just the click's own rerun
+            # (verified live: unlike st.button, which only returns True on
+            # the exact click). Without the "already submitted" guard below,
+            # every later interaction in this session would resend the same
+            # feedback to Langfuse as a fresh score.
             feedback = st.feedback("thumbs", key=f"feedback-{i}")
-            if feedback is not None:
-                st.toast("Thanks for the feedback! (not yet sent to Langfuse — see Milestone 12)")
+            if feedback is not None and not message.get("feedback_submitted"):
+                thumbs_up = feedback == 1
+                if _submit_feedback(message_id=message["message_id"], thumbs_up=thumbs_up):
+                    message["feedback_submitted"] = True
+                    message["thumbs_up"] = thumbs_up
+                    st.toast("Thanks for the feedback!")
+                else:
+                    st.toast("Could not record feedback — is the API reachable?")
+
+            if message.get("feedback_submitted") and not message.get("comment_submitted"):
+                with st.form(key=f"comment-form-{i}", clear_on_submit=True, border=False):
+                    comment = st.text_input(
+                        "Add an optional comment",
+                        key=f"comment-input-{i}",
+                        label_visibility="collapsed",
+                        placeholder="Add an optional comment...",
+                    )
+                    if st.form_submit_button("Send comment") and comment.strip():
+                        if _submit_feedback(
+                            message_id=message["message_id"],
+                            thumbs_up=message["thumbs_up"],
+                            comment=comment.strip(),
+                        ):
+                            message["comment_submitted"] = True
+                            st.toast("Comment sent.")
+                            # Without this, the form is still drawn in *this*
+                            # script pass (it ran before the mutation above),
+                            # so the box/button would visibly linger for one
+                            # extra interaction — same reasoning as the
+                            # st.rerun() after a chat response, below.
+                            st.rerun()
+                        else:
+                            st.toast("Could not send the comment — is the API reachable?")
 
 if prompt := st.chat_input("Plan your next trip..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -135,6 +195,7 @@ if prompt := st.chat_input("Plan your next trip..."):
                     "role": "assistant",
                     "content": body["message"],
                     "trace_id": body.get("trace_id"),
+                    "message_id": body.get("message_id"),
                     "model": body.get("metadata", {}).get("model"),
                     "latency_ms": latency_ms,
                 }

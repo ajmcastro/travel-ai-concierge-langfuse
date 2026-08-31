@@ -101,11 +101,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     # Only reached on success — a turn that raised never gets remembered,
     # so a failed exchange can't poison every subsequent turn's context.
-    await store.append_turn(
-        session_id,
-        Turn(user_message=request.message, assistant_message=content, trace_id=trace_id),
-        max_turns=settings.max_history_turns,
-    )
+    turn = Turn(user_message=request.message, assistant_message=content, trace_id=trace_id)
+    await store.append_turn(session_id, turn, max_turns=settings.max_history_turns)
 
     if settings.debug:
         # Spans batch and export asynchronously; a request in a short-lived
@@ -118,5 +115,6 @@ async def chat(request: ChatRequest) -> ChatResponse:
         session_id=session_id,
         message=content,
         trace_id=trace_id if settings.debug else None,
+        message_id=turn.turn_id,
         metadata={"model": provider.model},
     )

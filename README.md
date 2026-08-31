@@ -12,7 +12,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M11 — LLM-as-judge ([progress table](#milestones))  
+> **Current milestone:** M12 — Human feedback ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -242,9 +242,24 @@ make serve    # API, in one terminal
 make ui       # Streamlit, in another — opens at http://localhost:8501
 ```
 
-A real chat interface: multi-turn transcript, a "New conversation" button (fresh `session_id`, cleared history), thumbs up/down under each response, and a sidebar debug panel (session/user ID, model, client-measured latency, and a link straight to the trace in Langfuse).
+A real chat interface: multi-turn transcript, a "New conversation" button (fresh `session_id`, cleared history), thumbs up/down under each response (since Milestone 12, wired to a real Langfuse score — see [Human Feedback](#human-feedback) below), and a sidebar debug panel (session/user ID, model, client-measured latency, and a link straight to the trace in Langfuse).
 
-Talks to the API exclusively over HTTP (`API_BASE_URL` in `.env`) — the UI process never imports agent or provider code, so it can be started, stopped, or deployed independently of the API. One remaining honest limitation, visible in the UI itself rather than hidden: feedback buttons are a visible placeholder with no backend effect yet (real Langfuse scoring is Milestone 12). Since Milestone 7, the other limitation this section used to name here is resolved: each request still sends only the latest message, but the API itself now replays conversation history server-side (see [Sessions](#sessions-and-conversation-memory) above) — the transcript displaying full history is no longer just a client-side illusion.
+Talks to the API exclusively over HTTP (`API_BASE_URL` in `.env`) — the UI process never imports agent or provider code, so it can be started, stopped, or deployed independently of the API. Since Milestone 7, each request still sends only the latest message, but the API itself now replays conversation history server-side (see [Sessions](#sessions-and-conversation-memory) above) — the transcript displaying full history is no longer just a client-side illusion.
+
+---
+
+## Human Feedback
+
+```bash
+make serve   # API
+make ui      # thumbs up/down under each response, plus an optional comment
+```
+
+A real end user's opinion, sent to Langfuse as a genuine score — `POST /feedback` takes a `message_id` (returned by every `/chat` response, distinct from the debug-gated `trace_id`) and writes `user_thumbs` (1.0/0.0) plus an optional comment, linked to the trace it's rating (Langfuse's ingestion API accepts only one of trace/session/dataset-run per score, so the score itself carries `trace_id`, not both — the trace already carries its own `session_id` from creation, so it's still findable either way directly in Langfuse's own UI: filter traces by `user_thumbs < 1`, or roll up by session — no custom dashboard built for this).
+
+The `message_id`/`trace_id` split exists because `trace_id` is deliberately hidden from the client outside `Settings.debug` (Milestone 2), but feedback needs to work in production too — `message_id` is always returned, and the server resolves it back to the real trace internally. A resubmitted rating for the same message reuses the same deterministic `score_id` rather than creating a duplicate. Full design reasoning in [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md#milestone-12--human-feedback).
+
+**Finding it in Langfuse**: open a trace and click its **Scores** tab (not the default "Preview" tab) — that's where `user_thumbs`, its value, and the comment actually show up; there's also a small `user_thumbs: 1.00`-style hint under the trace name in the tree view. Its **Observation** and **Session** columns are empty by design (the score links `trace_id` only — see above), not a sign anything's missing.
 
 ---
 
@@ -294,10 +309,10 @@ make check             # lint + format-check + typecheck
 ```
 src/travel_ai_concierge/
 ├── config/          — Pydantic Settings
-├── api/             — FastAPI app, routes (/health, /chat, /sessions/{id}), request/response schemas
+├── api/             — FastAPI app, routes (/health, /chat, /sessions/{id}, /feedback ✅ Milestone 12), request/response schemas
 ├── agent/           — LangGraph agent/tools loop ✅ (Milestone 5): state, nodes, graph
 ├── providers/llm/   — LLM provider abstraction ✅ (Milestone 2, tool-calling added M5): Mock, Anthropic
-├── conversation/    — In-memory per-session conversation store ✅ (Milestone 7)
+├── conversation/    — In-memory per-session conversation store ✅ (Milestone 7), turn lookup by message_id (Milestone 12)
 ├── prompts.py       — Langfuse Prompt Management fetch + local fallback ✅ (Milestone 8)
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
@@ -344,7 +359,8 @@ data/
 | M9 | Evaluation framework ✅ |
 | M10 | Langfuse datasets and experiments ✅ |
 | M11 | LLM-as-judge ✅ |
-| M12–M21 | Human feedback, regression detection… |
+| M12 | Human feedback ✅ |
+| M13–M21 | Agent trajectory evaluation, cost/latency experiments, failure & resilience, debugging exercise, regression detection, optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
 
 ---
 

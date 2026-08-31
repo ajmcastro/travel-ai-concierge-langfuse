@@ -16,7 +16,9 @@ from streamlit.testing.v1 import AppTest
 APP_PATH = str(Path(__file__).resolve().parents[2] / "ui" / "streamlit_app.py")
 
 
-def _fake_chat_response(message: str, trace_id: str | None = "abc123") -> SimpleNamespace:
+def _fake_chat_response(
+    message: str, trace_id: str | None = "abc123", message_id: str = "turn-abc123"
+) -> SimpleNamespace:
     def raise_for_status() -> None:
         return None
 
@@ -27,9 +29,29 @@ def _fake_chat_response(message: str, trace_id: str | None = "abc123") -> Simple
             "session_id": "session-test",
             "message": message,
             "trace_id": trace_id,
+            "message_id": message_id,
             "metadata": {"model": "mock-echo-v1"},
         },
     )
+
+
+def _fake_feedback_response() -> SimpleNamespace:
+    return SimpleNamespace(
+        status_code=201, raise_for_status=lambda: None, json=lambda: {"recorded": True}
+    )
+
+
+def _routed_post(feedback_calls: list[dict]):
+    # Milestone 12: httpx2.post is called for both /chat and /feedback —
+    # route on the URL so a single monkeypatch can serve both, and record
+    # every /feedback call's JSON body for assertions.
+    def _post(url: str, json: dict, **kwargs: object) -> SimpleNamespace:
+        if url.endswith("/feedback"):
+            feedback_calls.append(json)
+            return _fake_feedback_response()
+        return _fake_chat_response("[mock] I heard: " + json["message"])
+
+    return _post
 
 
 def test_app_runs_without_error():
@@ -125,3 +147,88 @@ def test_debug_panel_degrades_cleanly_when_langfuse_unreachable(monkeypatch: pyt
     assert not at.exception
     sidebar_captions = " ".join(c.value for c in at.sidebar.caption)
     assert "Trace link unavailable" in sidebar_captions
+
+
+def test_thumbs_up_posts_feedback_with_the_returned_message_id(monkeypatch: pytest.MonkeyPatch):
+    feedback_calls: list[dict] = []
+    monkeypatch.setattr("httpx2.post", _routed_post(feedback_calls))
+
+    at = AppTest.from_file(APP_PATH).run()
+    at.chat_input[0].set_value("hello").run()
+    at.feedback[0].set_value(1).run()
+
+    assert not at.exception
+    assert len(feedback_calls) == 1
+    assert feedback_calls[0]["message_id"] == "turn-abc123"
+    assert feedback_calls[0]["thumbs_up"] is True
+    assert feedback_calls[0]["comment"] is None
+
+
+def test_thumbs_down_sends_thumbs_up_false(monkeypatch: pytest.MonkeyPatch):
+    feedback_calls: list[dict] = []
+    monkeypatch.setattr("httpx2.post", _routed_post(feedback_calls))
+
+    at = AppTest.from_file(APP_PATH).run()
+    at.chat_input[0].set_value("hello").run()
+    at.feedback[0].set_value(0).run()
+
+    assert feedback_calls[0]["thumbs_up"] is False
+
+
+def test_feedback_is_not_resubmitted_on_a_later_unrelated_rerun(monkeypatch: pytest.MonkeyPatch):
+    # st.feedback is stateful — it returns the same selection on every rerun
+    # after the click, not just the click's own rerun. Regression test for
+    # exactly that: a second, unrelated rerun (here, another chat message)
+    # must not resend the same feedback.
+    feedback_calls: list[dict] = []
+    monkeypatch.setattr("httpx2.post", _routed_post(feedback_calls))
+
+    at = AppTest.from_file(APP_PATH).run()
+    at.chat_input[0].set_value("hello").run()
+    at.feedback[0].set_value(1).run()
+    assert len(feedback_calls) == 1
+
+    at.chat_input[0].set_value("another message").run()
+
+    assert len(feedback_calls) == 1
+
+
+def test_optional_comment_sent_after_feedback_reuses_the_recorded_rating(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    feedback_calls: list[dict] = []
+    monkeypatch.setattr("httpx2.post", _routed_post(feedback_calls))
+
+    at = AppTest.from_file(APP_PATH).run()
+    at.chat_input[0].set_value("hello").run()
+    at.feedback[0].set_value(1).run()
+    assert len(feedback_calls) == 1
+
+    at.text_input[0].set_value("loved the detail").run()
+    send_comment_button = next(b for b in at.button if b.label == "Send comment")
+    send_comment_button.click().run()
+
+    assert not at.exception
+    assert len(feedback_calls) == 2
+    assert feedback_calls[1]["comment"] == "loved the detail"
+    assert feedback_calls[1]["thumbs_up"] is True
+    # Regression guard: a successful "Send comment" click must trigger its
+    # own st.rerun() so the form disappears on the very next render, not
+    # only once some later, unrelated interaction happens to rerun the
+    # script (see docs/EXPERIMENTS.md, Milestone 12 follow-up).
+    assert len(at.text_input) == 0
+
+
+def test_no_feedback_widget_without_a_message_id(monkeypatch: pytest.MonkeyPatch):
+    # A response with no message_id (e.g. an older/mismatched API) shouldn't
+    # render a feedback widget with nothing to attach it to.
+    monkeypatch.setattr(
+        "httpx2.post",
+        lambda *a, **k: _fake_chat_response("hi", message_id=None),  # type: ignore[arg-type]
+    )
+
+    at = AppTest.from_file(APP_PATH).run()
+    at.chat_input[0].set_value("hello").run()
+
+    assert not at.exception
+    assert len(at.feedback) == 0

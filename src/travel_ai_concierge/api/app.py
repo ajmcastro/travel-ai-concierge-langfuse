@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from travel_ai_concierge.api.routes.chat import router as chat_router
+from travel_ai_concierge.api.routes.feedback import router as feedback_router
 from travel_ai_concierge.api.routes.health import router as health_router
 from travel_ai_concierge.api.routes.sessions import router as sessions_router
 from travel_ai_concierge.config import get_settings
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(chat_router)
     app.include_router(sessions_router)
+    app.include_router(feedback_router)
 
     return app
 

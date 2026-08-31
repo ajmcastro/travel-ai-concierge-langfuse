@@ -32,6 +32,7 @@ async def get_session(session_id: str) -> SessionResponse:
                 user_message=turn.user_message,
                 assistant_message=turn.assistant_message,
                 trace_id=turn.trace_id if settings.debug else None,
+                message_id=turn.turn_id,
             )
             for turn in history
         ],

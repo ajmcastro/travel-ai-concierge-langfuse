@@ -1,13 +1,13 @@
 # Architecture — Travel AI Concierge
 
-> Last updated: Milestone 11  
+> Last updated: Milestone 12  
 > This document evolves with the project. Each milestone adds to it.
 
 ## Overview
 
 The Travel AI Concierge is an agentic AI application with comprehensive LLM observability via Langfuse. Its primary purpose is to demonstrate production-quality AI engineering practices using a realistic travel domain as the workload.
 
-As of this writing, everything in the diagram below is real **except** the OpenAI provider and `build_itinerary` tool (shown for scale — future, unimplemented) and the Travel AI Search API integration (Milestone 18, optional). The Chat UI calls `POST /chat` over HTTP, which runs the LangGraph agent by default (`Settings.agent_enabled`, default `True`) — the agent decides whether to answer directly or call a tool, executes it if so, and loops back until it has a final answer. Since Milestone 7, each call also carries real conversation memory: prior turns in the same `session_id` are replayed into context, not just grouped in Langfuse. Since Milestone 8, the system prompt itself is fetched from Langfuse Prompt Management rather than hardcoded — see [Prompt Management](#prompt-management-m8) below. Since Milestone 9, a local deterministic evaluation harness (`make evaluate`) runs a 39-case dataset through this same agent — see "Evaluation Framework" below. Since Milestone 10, that same dataset can also be published to a real Langfuse Dataset and run as a named, comparable experiment (`make sync-eval-dataset`, `make experiment-prompt-v1`/`-v2`) — see "Langfuse Datasets and Experiments" below. Since Milestone 11, cases can also be scored qualitatively by an LLM judge (relevance, helpfulness, groundedness, constraint satisfaction, itinerary coherence) alongside Layer 1's deterministic checks — see "LLM-as-Judge" below. See the [Trace Structure](#trace-structure) section for what a real request actually produces, and [Milestone Status](#milestone-status) for what's implemented per milestone.
+As of this writing, everything in the diagram below is real **except** the OpenAI provider and `build_itinerary` tool (shown for scale — future, unimplemented) and the Travel AI Search API integration (Milestone 18, optional). The Chat UI calls `POST /chat` over HTTP, which runs the LangGraph agent by default (`Settings.agent_enabled`, default `True`) — the agent decides whether to answer directly or call a tool, executes it if so, and loops back until it has a final answer. Since Milestone 7, each call also carries real conversation memory: prior turns in the same `session_id` are replayed into context, not just grouped in Langfuse. Since Milestone 8, the system prompt itself is fetched from Langfuse Prompt Management rather than hardcoded — see [Prompt Management](#prompt-management-m8) below. Since Milestone 9, a local deterministic evaluation harness (`make evaluate`) runs a 39-case dataset through this same agent — see "Evaluation Framework" below. Since Milestone 10, that same dataset can also be published to a real Langfuse Dataset and run as a named, comparable experiment (`make sync-eval-dataset`, `make experiment-prompt-v1`/`-v2`) — see "Langfuse Datasets and Experiments" below. Since Milestone 11, cases can also be scored qualitatively by an LLM judge (relevance, helpfulness, groundedness, constraint satisfaction, itinerary coherence) alongside Layer 1's deterministic checks — see "LLM-as-Judge" below. Since Milestone 12, a real user can rate a response too — thumbs up/down plus an optional comment, sent to Langfuse as a genuine score (Layer 3) — see "Human Feedback" below. See the [Trace Structure](#trace-structure) section for what a real request actually produces, and [Milestone Status](#milestone-status) for what's implemented per milestone.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -69,10 +69,10 @@ Streamlit app (`ui/streamlit_app.py`), a separate process that talks to FastAPI 
 - Session continuity (`session_id` persisted per browser session) and reset ("New conversation")
 - A stable, synthetic `user_id` per browser session (not per message)
 - Debug panel: session/user ID, model, client-measured latency, and a link to the trace in Langfuse
-- Feedback placeholders (`st.feedback`) — visible, but not yet sent to Langfuse (Milestone 12)
+- Thumbs up/down (`st.feedback`) plus an optional comment, sent to Langfuse as a real score (Milestone 12) — see "Human Feedback" below
 - Clean error display when the API is unreachable or returns an error, and when the debug panel's Langfuse trace-link lookup fails (unreachable host, bad credentials, timeout — caught broadly since this is a non-critical convenience, not the core chat feature)
 
-### FastAPI ✅ Implemented (M0, M2, M5, M6, M7, M8)
+### FastAPI ✅ Implemented (M0, M2, M5, M6, M7, M8, M12)
 
 The HTTP boundary. Accepts chat requests, manages session IDs, and returns responses. Does not contain agent logic itself — it delegates. Responsible for:
 - Validating request schemas (Pydantic) — `api/schemas/chat.py`
@@ -81,8 +81,9 @@ The HTTP boundary. Accepts chat requests, manages session IDs, and returns respo
 - Fetching the system prompt from Langfuse Prompt Management before building `messages`, and linking it to the turn's generation(s) (M8 — see [Prompt Management](#prompt-management-m8) below)
 - Delegating to the agent graph by default (`Settings.agent_enabled`, M5), or the LLM provider directly when `agent_enabled=False` (the M2 shape, kept as a live comparison point rather than deleted)
 - Recording `level="ERROR"`/`status_message` on the root trace if the turn raises, before re-raising (M6)
-- Returning trace IDs, but only when `Settings.debug` is true
+- Returning trace IDs, but only when `Settings.debug` is true; always returning an opaque `message_id` regardless of debug (M12 — see "Human Feedback" below)
 - `GET /sessions/{session_id}` — returns this app's own stored turn history for a session, 404 if none exists (M7)
+- `POST /feedback` — thumbs up/down plus an optional comment, sent to Langfuse as a real score (M12)
 
 ### Prompt Management (M8)
 
@@ -165,6 +166,17 @@ One `JudgeProvider` abstraction, two call sites — the same reuse pattern M10 e
 - **Self-preference / verbosity bias** — documented in the evaluation literature, not controlled for here.
 - **Stochasticity** — `AnthropicProvider.complete()` never sends `temperature` at all (no such parameter exists in the installed SDK version — M2's own finding), so identical inputs are not guaranteed identical scores. `tests/integration/test_llm_judge.py` demonstrates this empirically (judges the same case twice, prints both score sets, asserts nothing about them matching) rather than just asserting the limitation in prose.
 - **Judged on the conversation alone** — the judge never sees this project's own `expected_tools`/`expected_arguments` test fixtures, only the user's message, the agent's final response, and the raw tool results. That keeps its "constraint satisfaction" score an independent read of the conversation rather than a check against our own answer key (which Layer 1 already does).
+
+### Human Feedback (M12)
+
+Layer 3 of the project's evaluation architecture (alongside Layer 1's deterministic evaluators, M9, and Layer 2's LLM-as-judge, M11) — a real end user's own opinion, sent to Langfuse as a genuine score rather than the visual-only placeholder Milestone 3 shipped.
+
+- `POST /feedback` (`api/routes/feedback.py`) — `thumbs_up: bool` (required) plus an optional `comment: str`. Creates one `create_score(name="user_thumbs", value=1.0|0.0, data_type="NUMERIC", trace_id=..., ...)` call carrying **`trace_id` only**. An earlier version also passed `session_id` on the same call — the Python SDK's signature accepts both, but Langfuse's ingestion API rejects a score body carrying more than one of `traceId`/`sessionId`/`datasetRunId`, and does so silently from the caller's point of view (`create_score()`'s batch export runs on a background thread and only logs the rejection, never raises) — every score was dropped until this was caught by manually clicking feedback in the UI and finding nothing in Langfuse. Full story in [docs/EXPERIMENTS.md](EXPERIMENTS.md). Nothing is lost by dropping `session_id` from the score itself: the scored trace already carries `session_id` from when the turn was created (`chat.py`, M2), so a low-rated response is still findable either per-trace or rolled up per-conversation in Langfuse's own UI — no custom analytics dashboard built for this, consistent with the project's running principle of not duplicating what the SDK/UI already does correctly (established since M8).
+- **The `message_id`/`trace_id` split.** `ChatResponse.trace_id` is deliberately hidden outside `Settings.debug` (a production client shouldn't see raw Langfuse trace IDs), but feedback has to work in production too. `ChatResponse` and `SessionTurn` both now also carry `message_id` — an opaque id (`Turn.turn_id`, a `uuid.uuid4().hex`), always returned regardless of debug mode. `POST /feedback` resolves it back to the real `trace_id` server-side via `ConversationStore.find_turn()` (a new lookup method alongside M7's existing per-session turn list), so the client never needs to know the real trace id at all.
+- **Deterministic `score_id`** (`feedback-<message_id>`) — the same id-based-upsert convention `create_dataset_item()` used in M10 — so a comment sent after an initial thumbs click updates that same logical score instead of creating a second, disconnected one. This specific upsert behavior is *not* independently verified against a real Langfuse read (this deployment runs "events_only" mode, which has no read API — see [docs/langfuse.md](langfuse.md)); it's documented as a best-effort assumption, not a confirmed fact.
+- **Chat UI**: `st.feedback` (thumbs) plus an `st.form`-wrapped optional comment box. `st.feedback` is a *stateful* widget — unlike `st.button`, it keeps returning the same selection on every later rerun, not just the click's own — so the UI guards submission with a `feedback_submitted` flag in `st.session_state` to avoid resending the same rating on an unrelated later rerun (e.g. sending another chat message). Covered by a dedicated regression test, `test_feedback_is_not_resubmitted_on_a_later_unrelated_rerun`. A successful "Send comment" click also calls `st.rerun()` explicitly, so the comment form disappears on the very next render instead of lingering until an unrelated interaction happens to rerun the script — `test_optional_comment_sent_after_feedback_reuses_the_recorded_rating` pins this with `len(at.text_input) == 0` right after the click.
+- **Score linking, corrected in practice**: the score carries `trace_id` only, never also `session_id` — Langfuse's ingestion API accepts exactly one of `traceId`/`sessionId`/`datasetRunId` per score and silently drops (server-side 400, never surfaced by `create_score()`/`flush()`) a score carrying more than one. An earlier version of this route passed both and every score was rejected; caught live in the browser, not by any test — full account in [docs/EXPERIMENTS.md](EXPERIMENTS.md). In Langfuse's own UI, this means a `user_thumbs` score's **Observation** and **Session** columns are always empty by design (no `observation_id` is set either, since the feedback is about the whole response, not one internal step) — the score is still findable per-session because the *trace itself* carries `session_id` from when it was created, not because the score repeats it.
+- **Deliberately not built**: a 1-5 star rating (the spec's broader Layer 3 section mentions it, but Milestone 12's own scoped bullet list only asks for thumbs + optional comment); a comment-without-a-rating flow (`create_score()` requires a `value`, so a comment always attaches to an existing thumbs rating); any custom "browse low-rated traces" view (Langfuse's own trace filtering, e.g. `user_thumbs < 1`, already covers this).
 
 ### Langfuse
 
@@ -264,8 +276,9 @@ The synthetic travel dataset (`data/synthetic/*.json`) is not `Settings`-configu
 | M9        | Evaluation framework                 | ✅ Complete |
 | M10       | Langfuse datasets and experiments    | ✅ Complete |
 | M11       | LLM-as-judge                         | ✅ Complete |
-| M12       | Human feedback                       | ⬜ Next     |
-| …         | See PROJECT_SPEC.md for full list    |             |
+| M12       | Human feedback                       | ✅ Complete |
+| M13       | See PROJECT_SPEC.md for full list    | ⬜ Next     |
+| …         |                                       |             |
 
 ## Architecture Decision Records
 

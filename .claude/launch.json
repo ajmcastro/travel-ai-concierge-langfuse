@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ui",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "streamlit", "run", "ui/streamlit_app.py", "--server.headless", "true"],
+      "port": 8501
+    }
+  ]
+}

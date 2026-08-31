@@ -148,3 +148,29 @@ can read back `langfuse.trace.tags`, `langfuse.trace.metadata.*`,
 `langfuse.version`, and `langfuse.observation.level` directly off the
 finished span and know the real SDK call produced what we intended — not
 just that our code compiled and ran without raising.
+
+## 6. Scores (Milestone 12)
+
+A score is a different kind of Langfuse entity from everything else on this
+page — not an observation with a name/type in the table above, but a
+separate value (`create_score(name=..., value=..., ...)`) attached to an
+existing trace, session, or dataset run *after* it already exists. This
+project's one score, `user_thumbs` (`api/routes/feedback.py`), is attached
+to `trace_id` **only** — Langfuse's ingestion API requires *exactly one* of
+`traceId`/`sessionId`/`datasetRunId` per score and rejects a body carrying
+more than one, a real `400` confirmed against a live deployment. It's still
+visible whether you're looking at one request or rolling up a whole
+conversation, because the *trace itself* already carries `session_id` from
+when it was created — see [architecture.md](architecture.md#human-feedback-m12)
+for the full design, and [EXPERIMENTS.md](EXPERIMENTS.md) for how the
+earlier both-at-once version was caught (a human clicking feedback live,
+not a test). Because scores aren't part of the span tree, they don't show
+up in `InMemorySpanExporter`-based tests the way section 5 above verifies
+trace attributes; `tests/unit/test_feedback_route.py` instead records the
+`create_score(**kwargs)` call itself via a small recording test double —
+which is exactly why that bug got past the unit tests: a fake recorder
+that only stores kwargs can't know the real ingestion API would reject
+them. `tests/integration/test_feedback_score.py` now also posts the same
+score shape straight to `/api/public/ingestion` and asserts on the
+response's own `errors` array, since `create_score()`/`flush()` never
+surface that rejection to the caller.

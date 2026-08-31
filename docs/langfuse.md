@@ -122,6 +122,6 @@ docker compose down -v      # stop containers AND delete all data
 
 ## What's deliberately not covered here
 
-- Human feedback — later milestone (M12). Prompt management is covered as of Milestone 8, a local deterministic evaluation framework as of Milestone 9, Langfuse dataset publishing/experiments as of Milestone 10, and LLM-as-judge as of Milestone 11 — see [docs/architecture.md](architecture.md#prompt-management-m8) and its "Evaluation Framework" / "Langfuse Datasets and Experiments" / "LLM-as-Judge" sections.
+- Prompt management is covered as of Milestone 8, a local deterministic evaluation framework as of Milestone 9, Langfuse dataset publishing/experiments as of Milestone 10, LLM-as-judge as of Milestone 11, and human feedback scoring as of Milestone 12 — see [docs/architecture.md](architecture.md#prompt-management-m8) and its "Evaluation Framework" / "Langfuse Datasets and Experiments" / "LLM-as-Judge" / "Human Feedback" sections.
 - Production security hardening, TLS, multi-tenant auth — out of scope for a local educational stack (see ADR-004's discussion of the local/Cloud split)
 - Switching to Langfuse Cloud — see `.env.example` and ADR-004; no code changes are required, only the three `LANGFUSE_*` values
