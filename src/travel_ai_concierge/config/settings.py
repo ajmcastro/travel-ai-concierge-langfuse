@@ -88,6 +88,15 @@ class Settings(BaseSettings):
     judge_provider: str = "fake"
     judge_model: str = "mock"
 
+    # Milestone 17: regression detection. `make eval-ci` fails when either
+    # metric drops by more than this from the committed baseline
+    # (data/evaluation/baseline.json) — expressed as a max allowed drop in
+    # the 0..1 rate, e.g. 0.05 = 5 percentage points. Two independent
+    # thresholds, not one combined score, because Milestone 16 showed the
+    # two metrics can move in opposite directions on the same regression.
+    regression_max_quality_drop: float = 0.05
+    regression_max_trajectory_drop: float = 0.05
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

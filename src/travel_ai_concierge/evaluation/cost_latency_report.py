@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from travel_ai_concierge.evaluation.cost_latency import CaseCostLatency
 from travel_ai_concierge.evaluation.models import CaseReport
-from travel_ai_concierge.evaluation.trajectory_report import build_trajectory_reports
+from travel_ai_concierge.evaluation.trajectory_report import compute_quality_metrics
 
 
 def _percentile(values: list[float], p: float) -> float:
@@ -58,15 +58,7 @@ def compute_config_metrics(
 ) -> ConfigMetrics:
     total_cases = len(reports)
 
-    pass_count = sum(1 for r in reports for e in r.evaluations if e.outcome == "pass")
-    fail_count = sum(1 for r in reports for e in r.evaluations if e.outcome == "fail")
-    quality_pass_rate = (
-        pass_count / (pass_count + fail_count) if (pass_count + fail_count) else None
-    )
-
-    trajectory_reports = build_trajectory_reports(reports)
-    healthy_count = sum(1 for tr in trajectory_reports if tr.trajectory.is_healthy)
-    trajectory_healthy_rate = healthy_count / total_cases if total_cases else 0.0
+    quality_pass_rate, trajectory_healthy_rate = compute_quality_metrics(reports)
 
     latencies = [cl.total_latency_ms for cl in cost_latencies]
     llm_calls = [cl.llm_call_count for cl in cost_latencies]

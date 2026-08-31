@@ -1,0 +1,7 @@
+{
+  "recorded_at": "2026-08-31T20:04:09.629558+00:00",
+  "llm_provider": "mock",
+  "total_cases": 39,
+  "quality_pass_rate": 0.7310924369747899,
+  "trajectory_healthy_rate": 0.4358974358974359
+}

@@ -4,7 +4,7 @@
         up down restart logs \
         test test-unit test-integration \
         lint format format-check typecheck check \
-        generate-data tools-smoke-test generate-eval-dataset evaluate eval-ci evaluate-judged \
+        generate-data tools-smoke-test generate-eval-dataset evaluate eval-baseline eval-ci evaluate-judged \
         seed-prompts prompts-smoke-test \
         sync-eval-dataset experiment-prompt-v1 experiment-prompt-v2 \
         cost-latency-experiment \
@@ -119,7 +119,10 @@ generate-eval-dataset:  ## (Re)write data/evaluation/cases.json (Milestone 9)
 evaluate:  ## Run the deterministic evaluation suite + trajectory report (human + machine-readable)
 	uv run python scripts/run_evaluation.py
 
-eval-ci:  ## Run evaluation, exit non-zero if a case crashed (not yet a regression gate — see Milestone 17)
+eval-baseline:  ## Record this run's metrics as the regression baseline (Milestone 17) — a deliberate action, never automatic
+	uv run python scripts/run_evaluation.py --update-baseline
+
+eval-ci:  ## Run evaluation; exit non-zero if a case crashed OR a metric regressed past its threshold vs. the baseline (Milestone 17)
 	uv run python scripts/run_evaluation.py --ci
 
 evaluate-judged:  ## Same as `evaluate`, plus LLM-as-judge scores (Settings.judge_provider, default fake)

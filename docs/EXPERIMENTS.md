@@ -476,3 +476,54 @@ aligned (trajectory)                  16         17         17
 **Interpretation**: this milestone's real lesson isn't the specific bug — it's that an aggregate pass-rate number moved in the *wrong direction to notice* (up, not down) while a real regression was introduced, and only per-case diffing plus Milestone 13's trajectory metrics (`tool_precision`, `unnecessary_tool_calls`) caught it. A CI gate watching only the aggregate pass count, as Milestone 17 is about to build, would need to watch more than one number, or watch per-case results, to catch this class of regression — worth keeping in mind going into that milestone.
 
 **Limitations**: the bug and its diagnosis are both scoped to `MockProvider`'s trigger table, not the system prompt or `TOOL_SPECS`' tool descriptions — those *do* affect `AnthropicProvider`'s real reasoning, but exercising that path needs a real `ANTHROPIC_API_KEY`, unavailable in this environment (the same gap noted in Milestones 2, 5, and 14). The mechanism is different from a real prompt bug; the failure shape and the diagnostic workflow (trace shows a decision contradicting the system prompt, not an error) are the same, and would look identical in a real trace from a real model.
+
+---
+
+## 2026-08-31 — M17: regression detection — a real CI gate, verified to actually fail on a known-weaker configuration
+
+**Hypothesis**: a `make eval-ci` gate comparing two metrics (`quality_pass_rate`, `trajectory_healthy_rate`) against a committed baseline can both (a) pass cleanly on the current, known-good code and (b) actually exit non-zero on a real, previously-measured "known weaker version" — not just in theory, run for real.
+
+**Configuration**: baseline recorded via `make eval-baseline` against the current (post-Milestone-16) code, `LLM_PROVIDER=mock` (default). "Known weaker version" reused directly from Milestone 14's own comparison rather than inventing a new one: `AGENT_MAX_ITERATIONS=1` (forces exactly one LLM call, the agent can never request a tool).
+
+**Step 1 — establish the baseline** (`make eval-baseline`):
+
+```
+Baseline recorded: data/evaluation/baseline.json
+  quality_pass_rate=0.7310924369747899, trajectory_healthy_rate=0.4358974358974359
+```
+
+**Step 2 — run evaluation against the same, unmodified code** (`make eval-ci`):
+
+```
+Regression Check (Milestone 17)
+========================================
+Baseline: recorded 2026-08-31T20:04:09.629558+00:00  provider=mock  cases=39
+
+  quality_pass_rate          baseline=0.731  current=0.731  delta=+0.000  max_drop=0.050  [ok]
+  trajectory_healthy_rate    baseline=0.436  current=0.436  delta=+0.000  max_drop=0.050  [ok]
+
+Verdict: PASS
+```
+
+Exit code: `0`.
+
+**Step 3 — introduce the known weaker version and run the exact same gate** (`AGENT_MAX_ITERATIONS=1 uv run python scripts/run_evaluation.py --ci`, no code changes, one env var):
+
+```
+Regression Check (Milestone 17)
+========================================
+Baseline: recorded 2026-08-31T20:04:09.629558+00:00  provider=mock  cases=39
+
+  quality_pass_rate          baseline=0.731  current=0.542  delta=-0.189  max_drop=0.050  [REGRESSED]
+  trajectory_healthy_rate    baseline=0.436  current=0.026  delta=-0.410  max_drop=0.050  [REGRESSED]
+
+Verdict: FAIL
+```
+
+Exit code: `1`, confirmed via `echo $?` immediately after the run, not inferred from the printed text.
+
+**Result**: the gate did exactly what a CI quality gate needs to do — silent and green on the code that's actually shipping, loud and non-zero the moment a real configuration regression (already measured and documented back in Milestone 14: -15.9pp quality, -38.5pp trajectory health at the time, now -18.9pp/-41.0pp against the current, larger baseline) is reintroduced, with no code edited and no test file touched. `AGENT_MAX_ITERATIONS=1` was chosen specifically *because* it's a real, previously-measured, one-env-var "known weaker version" rather than a contrived one — exactly the kind of accidental change (a bad default, a misconfigured deploy) a real CI gate exists to catch.
+
+**Interpretation**: both metrics regressed together here, which doesn't prove the two-metric design was *necessary* for this particular demonstration — a single-step config breaks tool selection so thoroughly that even the aggregate Layer 1 pass rate drops. The two-metric design earns its keep on the *other* shape of regression, the one Milestone 16 actually produced live: quality moving the *right* direction while trajectory health quietly drops. `tests/unit/test_regression.py`'s `test_trajectory_drop_past_threshold_fails_even_when_quality_improves` pins that exact shape with a hand-built fixture, since MockProvider's real behavior doesn't currently produce it live in this run.
+
+**Limitations**: no `--push-to-langfuse`-style integration with Langfuse's own UI for this milestone — the spec asks for a CI gate (`make eval-ci`, exit code, configurable thresholds), which is fully local/scriptable by design, the same reasoning Milestone 9's `make eval-ci` crashed-case check never needed a Langfuse-side view either. The demonstration above used `AGENT_MAX_ITERATIONS=1`, a config regression — a real *prompt* or *tool-trigger* regression (Milestone 16's own bug shape) would be caught the same way, just not re-demonstrated here to avoid re-editing already-fixed production code for a second time.

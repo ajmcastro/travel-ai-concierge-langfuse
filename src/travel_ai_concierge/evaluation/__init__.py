@@ -37,6 +37,18 @@ from travel_ai_concierge.evaluation.models import (
     EvaluationCase,
     EvaluatorResult,
 )
+from travel_ai_concierge.evaluation.regression import Baseline as Baseline
+from travel_ai_concierge.evaluation.regression import MetricCheck as MetricCheck
+from travel_ai_concierge.evaluation.regression import (
+    RegressionCheckResult as RegressionCheckResult,
+)
+from travel_ai_concierge.evaluation.regression import build_baseline as build_baseline
+from travel_ai_concierge.evaluation.regression import check_regression as check_regression
+from travel_ai_concierge.evaluation.regression import load_baseline as load_baseline
+from travel_ai_concierge.evaluation.regression import (
+    render_regression_report as render_regression_report,
+)
+from travel_ai_concierge.evaluation.regression import save_baseline as save_baseline
 from travel_ai_concierge.evaluation.report import (
     render_human_readable,
     summarize,
@@ -47,6 +59,9 @@ from travel_ai_concierge.evaluation.trajectory import TrajectoryMetrics, compute
 from travel_ai_concierge.evaluation.trajectory_report import TrajectoryCaseReport
 from travel_ai_concierge.evaluation.trajectory_report import (
     build_trajectory_reports as build_trajectory_reports,
+)
+from travel_ai_concierge.evaluation.trajectory_report import (
+    compute_quality_metrics as compute_quality_metrics,
 )
 from travel_ai_concierge.evaluation.trajectory_report import (
     render_trajectory_summary as render_trajectory_summary,
@@ -61,6 +76,7 @@ from travel_ai_concierge.evaluation.trajectory_report import (
 __all__ = [
     "DATASET_NAME",
     "EVALUATORS",
+    "Baseline",
     "CaseCostLatency",
     "CaseJudgment",
     "CaseReport",
@@ -72,24 +88,32 @@ __all__ = [
     "JudgeParseError",
     "JudgeProvider",
     "JudgmentResult",
+    "MetricCheck",
+    "RegressionCheckResult",
     "TrajectoryCaseReport",
     "TrajectoryMetrics",
     "UsageTrackingProvider",
+    "build_baseline",
     "build_trajectory_reports",
+    "check_regression",
     "compute_config_metrics",
+    "compute_quality_metrics",
     "compute_trajectory_metrics",
     "cost_latency_to_machine_readable",
     "estimate_cost_usd",
     "get_judge_provider",
     "judge_to_machine_readable",
+    "load_baseline",
     "load_dataset",
     "render_cost_latency_comparison",
     "render_human_readable",
     "render_judge_summary",
+    "render_regression_report",
     "render_trajectory_summary",
     "run_case",
     "run_case_with_metrics",
     "run_named_experiment",
+    "save_baseline",
     "summarize",
     "summarize_judgments",
     "summarize_trajectories",

@@ -15,6 +15,7 @@ from travel_ai_concierge.evaluation.trajectory import compute_trajectory_metrics
 from travel_ai_concierge.evaluation.trajectory_report import (
     build_trajectory_reports,
     classify_divergence,
+    compute_quality_metrics,
     final_answer_is_healthy,
     render_trajectory_summary,
     summarize_trajectories,
@@ -258,3 +259,39 @@ def test_summarize_handles_no_precision_data_gracefully():
 
     summary = summarize_trajectories(build_trajectory_reports([report]))
     assert summary["average_tool_precision"] is None
+
+
+def test_compute_quality_metrics_reuses_pass_fail_and_healthy_rate():
+    # One case passes everything and has a healthy trajectory; one case
+    # fails an evaluator and has an unnecessary tool call.
+    good_case = _case(id="good", expected_tools=[])
+    good_result = _result(case_id="good", tool_calls=[])
+    good_report = CaseReport(
+        case=good_case,
+        result=good_result,
+        evaluations=[EvaluatorResult(evaluator="response_is_nonempty", outcome="pass")],
+    )
+
+    bad_case = _case(id="bad", expected_tools=[])
+    bad_result = _result(case_id="bad", tool_calls=["search_hotels"])
+    bad_report = CaseReport(
+        case=bad_case,
+        result=bad_result,
+        evaluations=[EvaluatorResult(evaluator="tool_usage_matches_expected", outcome="fail")],
+    )
+
+    quality_pass_rate, trajectory_healthy_rate = compute_quality_metrics([good_report, bad_report])
+
+    assert quality_pass_rate == 0.5  # 1 pass, 1 fail
+    assert trajectory_healthy_rate == 0.5  # 1 healthy (no tool calls), 1 unhealthy (unnecessary)
+
+
+def test_compute_quality_metrics_none_when_nothing_to_score():
+    case = _case(expected_tools=[])
+    result = _result(tool_calls=[])
+    report = CaseReport(case=case, result=result, evaluations=[])
+
+    quality_pass_rate, trajectory_healthy_rate = compute_quality_metrics([report])
+
+    assert quality_pass_rate is None  # no pass/fail evaluations at all
+    assert trajectory_healthy_rate == 1.0  # the one case has a healthy (empty) trajectory

@@ -111,6 +111,37 @@ def summarize_trajectories(trajectory_reports: list[TrajectoryCaseReport]) -> di
     }
 
 
+def compute_quality_metrics(reports: list[CaseReport]) -> tuple[float | None, float]:
+    """(quality_pass_rate, trajectory_healthy_rate) — the two-metric quality
+    signal reused by Milestone 14 (cost/latency config comparison) and
+    Milestone 17 (regression detection against a committed baseline).
+
+    Deliberately two numbers, not one: Milestone 16 found a real regression
+    where the aggregate Layer 1 pass rate moved in the *improving* direction
+    while `trajectory_healthy_rate` caught the actual damage — a gate
+    watching only the first would have missed it.
+
+    `quality_pass_rate` is Layer 1's pass / (pass + fail), skips excluded
+    (skips are "not applicable," not evidence either way); `None` if there's
+    nothing to compare (every evaluation skipped). `trajectory_healthy_rate`
+    is the fraction of cases with `TrajectoryMetrics.is_healthy` — `0.0`,
+    not `None`, when there are no cases, since an empty run has no health at
+    all to report as "unknown."
+    """
+    total_cases = len(reports)
+    pass_count = sum(1 for r in reports for e in r.evaluations if e.outcome == "pass")
+    fail_count = sum(1 for r in reports for e in r.evaluations if e.outcome == "fail")
+    quality_pass_rate = (
+        pass_count / (pass_count + fail_count) if (pass_count + fail_count) else None
+    )
+
+    trajectory_reports = build_trajectory_reports(reports)
+    healthy_count = sum(1 for tr in trajectory_reports if tr.trajectory.is_healthy)
+    trajectory_healthy_rate = healthy_count / total_cases if total_cases else 0.0
+
+    return quality_pass_rate, trajectory_healthy_rate
+
+
 def to_machine_readable(
     trajectory_reports: list[TrajectoryCaseReport], summary: dict[str, Any]
 ) -> dict[str, Any]:

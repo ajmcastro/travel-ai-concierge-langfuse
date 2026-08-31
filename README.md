@@ -12,7 +12,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M16 — Observability-driven debugging exercise ([progress table](#milestones))  
+> **Current milestone:** M17 — Regression detection ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -191,14 +191,14 @@ Every trace records which prompt version answered it (`metadata.prompt_version`,
 ```bash
 make generate-eval-dataset  # (re)write data/evaluation/cases.json
 make evaluate               # run it, print a human-readable + JSON report
-make eval-ci                # same, exits 1 only if a case crashed outright
+make eval-ci                # exits 1 if a case crashed OR a metric regressed vs. baseline (see Regression Detection below)
 ```
 
 Since Milestone 9, a local, deterministic evaluation harness runs 39 hand-authored test cases through the *real* agent graph — deliberately independent of Langfuse datasets at this layer (that's [below](#langfuse-datasets-and-experiments), Milestone 10, a separate optional publishing step). Cases cover all 20 query classes the project spec names — destination/hotel recommendation, family/couples holiday, budget/luxury, beach/city/culture/nightlife/quiet/food-wine, itinerary planning, vague requests, multi-constraint, needs-clarification, one-tool, multi-tool, impossible-constraint, contradictory-preferences — grounded in the real synthetic destinations/hotels, not invented data.
 
 Five deterministic (Layer 1 — no LLM judge here, that's [below](#llm-as-judge), Milestone 11) evaluators check each case: expected tool called, tool arguments satisfy the stated constraints, the response is non-empty, the response actually references what a tool returned (a groundedness *proxy*, not semantic scoring), and — where expected — a clarifying question was asked. Each evaluator can also `skip` a case it doesn't apply to, so out-of-scope checks aren't counted as failures.
 
-**Read the report's own note before judging a low pass rate**: under the default `MockProvider`, most tool-usage and clarification checks fail — not because the agent is broken, but because Mock is a fixed keyword-trigger table with no real reasoning (see [providers/llm/mock.py](src/travel_ai_concierge/providers/llm/mock.py)). The dataset describes what a *real* agent should do; run with `LLM_PROVIDER=anthropic` for a meaningful signal. `make eval-ci`'s `--ci` flag is **not** a regression/baseline gate yet — that's explicitly [Milestone 17](#milestones)'s job.
+**Read the report's own note before judging a low pass rate**: under the default `MockProvider`, most tool-usage and clarification checks fail — not because the agent is broken, but because Mock is a fixed keyword-trigger table with no real reasoning (see [providers/llm/mock.py](src/travel_ai_concierge/providers/llm/mock.py)). The dataset describes what a *real* agent should do; run with `LLM_PROVIDER=anthropic` for a meaningful signal.
 
 Each case runs as a real Langfuse trace, tagged `evaluation` plus its query class — inspectable exactly like production traffic, not a hidden side process.
 
@@ -302,6 +302,34 @@ total_unnecessary_tool_calls           2          3          2
 
 ---
 
+## Regression Detection
+
+```bash
+make eval-baseline  # record the current run as the regression baseline (a deliberate action, never automatic)
+make eval-ci        # exit non-zero if a case crashed OR a metric regressed past its threshold
+```
+
+`make eval-ci` is now a real CI quality gate, not just a crashed-case check. It compares two metrics from the current run against a committed baseline (`data/evaluation/baseline.json`) — `quality_pass_rate` (Layer 1) and `trajectory_healthy_rate` ([Milestone 13](#agent-trajectory-evaluation)) — and fails if either drops by more than `Settings.regression_max_quality_drop`/`regression_max_trajectory_drop` (both default 5 percentage points, both env-overridable). Two independent thresholds, not one blended score — directly because [Milestone 16](#observability-driven-debugging) found a real regression where the two metrics moved in *opposite* directions on the same bug.
+
+**A baseline is a deliberate, committed file, not a run artifact.** `data/evaluation/baseline.json` is checked into git like `data/evaluation/cases.json` — updated only by explicitly running `make eval-baseline`, never regenerated silently by `make evaluate`/`eval-ci`, the same "a human decides this is the new normal" reasoning `make seed-prompts` already established for prompt versions.
+
+**Verified live, not just in theory**: baseline recorded from the current code, `make eval-ci` passes clean (exit `0`). Reusing [Milestone 14](#cost-and-latency-experiments)'s own already-measured "known weaker version" — `AGENT_MAX_ITERATIONS=1`, one env var, no code changes — the exact same gate fails loud:
+
+```
+Regression Check (Milestone 17)
+========================================
+Baseline: recorded 2026-08-31T20:04:09.629558+00:00  provider=mock  cases=39
+
+  quality_pass_rate          baseline=0.731  current=0.542  delta=-0.189  max_drop=0.050  [REGRESSED]
+  trajectory_healthy_rate    baseline=0.436  current=0.026  delta=-0.410  max_drop=0.050  [REGRESSED]
+
+Verdict: FAIL
+```
+
+Exit code `1`, confirmed directly via `echo $?`. Full before/after output: [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md), Milestone 17.
+
+---
+
 ## Chat UI
 
 ```bash
@@ -385,14 +413,14 @@ src/travel_ai_concierge/
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
 ├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5)
-└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10), LLM-as-judge ✅ (Milestone 11), trajectory metrics + final-answer comparison ✅ (Milestone 13), local cost/latency measurement + config comparison ✅ (Milestone 14)
+└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10), LLM-as-judge ✅ (Milestone 11), trajectory metrics + final-answer comparison ✅ (Milestone 13), local cost/latency measurement + config comparison ✅ (Milestone 14), regression.py: baseline + CI gate ✅ (Milestone 17)
 
 ui/
 └── streamlit_app.py — Chat UI ✅ (Milestone 3), talks to the API over HTTP only
 
 data/
 ├── synthetic/       — 8 destinations, 18 hotels ✅ (Milestone 4), regenerate via `make generate-data`
-└── evaluation/      — 39-case dataset ✅ (Milestone 9), regenerate via `make generate-eval-dataset`; results/ is gitignored run output
+└── evaluation/      — 39-case dataset ✅ (Milestone 9), regenerate via `make generate-eval-dataset`; results/ is gitignored run output; baseline.json is committed, updated only via `make eval-baseline` ✅ (Milestone 17)
 ```
 
 ---
@@ -433,7 +461,8 @@ data/
 | M14 | Cost and latency experiments ✅ |
 | M15 | Failure and resilience laboratory ✅ |
 | M16 | Observability-driven debugging exercise ✅ |
-| M17–M21 | Regression detection, optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
+| M17 | Regression detection ✅ |
+| M18–M21 | Optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
 
 ---
 
