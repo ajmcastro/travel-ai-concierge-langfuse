@@ -97,6 +97,23 @@ class Settings(BaseSettings):
     regression_max_quality_drop: float = 0.05
     regression_max_trajectory_drop: float = 0.05
 
+    # Milestone 18: optional Travel AI Search integration. `travel_search_provider`
+    # mirrors `llm_provider`'s pattern exactly — "local" (default, always
+    # available, zero external services) or "travel_ai_search_api" (calls a
+    # separately running Travel AI Search backend over HTTP). Demonstrates
+    # service composition without a hard dependency: the app must still run
+    # fully offline with "local", the same requirement the spec states for
+    # the dataset itself ("The repository should work independently").
+    travel_search_provider: str = "local"
+    travel_ai_search_base_url: str = "http://localhost:8100"
+    travel_ai_search_timeout_seconds: float = 10.0
+    # Optional — sent as `Authorization: Bearer <key>` only when non-empty.
+    # A real deployment of the separate Travel AI Search project may or may
+    # not require auth; this project has no opinion on that, so it's unused
+    # unless configured, same "empty string means not configured" convention
+    # as `anthropic_api_key`.
+    travel_ai_search_api_key: str = ""
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

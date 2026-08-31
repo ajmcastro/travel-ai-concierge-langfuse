@@ -1,6 +1,6 @@
-from travel_ai_concierge.domain import Destination, Hotel, PriceBand, price_band_at_most
+from travel_ai_concierge.domain import Destination, Hotel, PriceBand
 from travel_ai_concierge.observability import get_langfuse_client
-from travel_ai_concierge.tools.data import get_destinations, get_hotels
+from travel_ai_concierge.providers.travel_search import get_travel_search_provider
 
 
 def search_destinations(
@@ -16,6 +16,12 @@ def search_destinations(
     root trace; called later from within an active `travel_concierge_turn`
     trace, the exact same code nests under it automatically via OTel context
     propagation — no change needed here when Milestone 5 arrives.
+
+    Since Milestone 18, the actual filtering happens inside whichever
+    `TravelSearchProvider` is configured (`Settings.travel_search_provider`)
+    — this function is only the LLM-facing tool boundary and its own
+    Langfuse `tool`-type instrumentation, unchanged regardless of which
+    provider actually serves the data. See `providers/travel_search/`.
     """
     client = get_langfuse_client()
     with client.start_as_current_observation(
@@ -23,15 +29,9 @@ def search_destinations(
         as_type="tool",
         input={"tags": tags, "climate": climate, "limit": limit},
     ) as span:
-        results = get_destinations()
-
-        if climate is not None:
-            results = [d for d in results if d.climate == climate]
-        if tags:
-            wanted = set(tags)
-            results = [d for d in results if wanted & set(d.tags)]
-
-        results = results[:limit]
+        results = get_travel_search_provider().search_destinations(
+            tags=tags, climate=climate, limit=limit
+        )
         span.update(output={"result_count": len(results)})
         return results
 
@@ -54,14 +54,12 @@ def search_hotels(
             "limit": limit,
         },
     ) as span:
-        results = [h for h in get_hotels() if h.destination_id == destination_id]
-
-        if family_friendly is not None:
-            results = [h for h in results if h.family_friendly == family_friendly]
-        if max_price_band is not None:
-            results = [h for h in results if price_band_at_most(h.price_band, max_price_band)]
-
-        results = results[:limit]
+        results = get_travel_search_provider().search_hotels(
+            destination_id=destination_id,
+            family_friendly=family_friendly,
+            max_price_band=max_price_band,
+            limit=limit,
+        )
         span.update(output={"result_count": len(results)})
         return results
 
@@ -74,6 +72,6 @@ def get_destination_information(destination_id: str) -> Destination | None:
         as_type="tool",
         input={"destination_id": destination_id},
     ) as span:
-        result = next((d for d in get_destinations() if d.id == destination_id), None)
+        result = get_travel_search_provider().get_destination_information(destination_id)
         span.update(output={"found": result is not None})
         return result

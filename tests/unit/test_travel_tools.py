@@ -6,12 +6,12 @@ active — consistent with the rest of this project's tests. These assert on
 business logic (filtering correctness), not on Langfuse internals.
 """
 
+from travel_ai_concierge.providers.travel_search.data import get_destinations, get_hotels
 from travel_ai_concierge.tools import (
     get_destination_information,
     search_destinations,
     search_hotels,
 )
-from travel_ai_concierge.tools.data import get_destinations, get_hotels
 
 
 def test_dataset_loads():

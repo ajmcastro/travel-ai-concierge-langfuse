@@ -527,3 +527,64 @@ Exit code: `1`, confirmed via `echo $?` immediately after the run, not inferred 
 **Interpretation**: both metrics regressed together here, which doesn't prove the two-metric design was *necessary* for this particular demonstration — a single-step config breaks tool selection so thoroughly that even the aggregate Layer 1 pass rate drops. The two-metric design earns its keep on the *other* shape of regression, the one Milestone 16 actually produced live: quality moving the *right* direction while trajectory health quietly drops. `tests/unit/test_regression.py`'s `test_trajectory_drop_past_threshold_fails_even_when_quality_improves` pins that exact shape with a hand-built fixture, since MockProvider's real behavior doesn't currently produce it live in this run.
 
 **Limitations**: no `--push-to-langfuse`-style integration with Langfuse's own UI for this milestone — the spec asks for a CI gate (`make eval-ci`, exit code, configurable thresholds), which is fully local/scriptable by design, the same reasoning Milestone 9's `make eval-ci` crashed-case check never needed a Langfuse-side view either. The demonstration above used `AGENT_MAX_ITERATIONS=1`, a config regression — a real *prompt* or *tool-trigger* regression (Milestone 16's own bug shape) would be caught the same way, just not re-demonstrated here to avoid re-editing already-fixed production code for a second time.
+
+---
+
+## 2026-08-31 — M18: optional Travel AI Search integration — a real HTTP round trip, and a real circular import found by running the tests
+
+**Hypothesis**: a `TravelSearchProvider` Protocol (mirroring `LLMProvider`, ADR-003) can swap the travel tools onto a separately running Travel AI Search backend with a single `Settings` change, produce the exact trace shape the spec's own diagram asks for (`agent → search tool → Travel AI Search API → results → agent`), and still leave the default (local, no external services) path completely unchanged — verified by the existing 15-test `test_travel_tools.py` suite passing byte-for-byte unmodified after the refactor.
+
+**A real circular import, found by running the tests, not anticipated**: the natural implementation reuses `tools/data.py`'s JSON loader inside the new `LocalSyntheticTravelSearchProvider`. But `tools/travel_tools.py` needs to import `providers.travel_search` (for `get_travel_search_provider()`), and importing anything from `tools.data` first runs `tools/__init__.py`, which eagerly imports `travel_tools.py` — a genuine cycle, not a hypothetical one:
+
+```
+providers/travel_search/__init__.py -> local.py -> tools.data
+  -> (forces) tools/__init__.py -> specs.py -> travel_tools.py
+  -> providers.travel_search  (still mid-import — ImportError)
+```
+
+Fixed by moving the loader to `providers/travel_search/data.py` (bumping its repo-root path resolution from `parents[3]` to `parents[4]`) — which is also the more architecturally honest home for it: loading the local dataset is a concern of the *local search provider* now, not the tool-wrapping layer above it. `test_travel_tools.py`'s own import updated to match; all 15 of its tests still pass unmodified otherwise.
+
+**Configuration — the refactor is behavior-preserving**:
+
+```bash
+uv run pytest tests/unit/test_travel_tools.py -q
+# 15 passed  (unchanged from before the refactor)
+make check && make test
+# 253 passed, 12 deselected  (was 238 before this milestone — +15 new tests)
+```
+
+**The spec's own trace diagram, run for real, not simulated**: a small in-process fake HTTP server (`http.server.ThreadingHTTPServer`, `tests/integration/test_travel_ai_search_provider.py`) implements the assumed Travel AI Search contract (`GET /destinations`, `GET /hotels`, `GET /destinations/{id}`), serving from this project's own synthetic dataset so both providers can be cross-checked against each other for the same query. A real `/chat` request, with `TRAVEL_SEARCH_PROVIDER=travel_ai_search_api` pointed at that server, produced this exact trace (captured live, `trace_id=78db017586c375a4ca3bc1c08bad9ee6`):
+
+```
+travel_concierge_turn
+├── agent          (iteration 0)
+│   └── llm_call
+├── execute_tools
+│   └── search_hotels
+│       └── travel_search_backend   input: {op: search_hotels, destination_id: algarve, family_friendly: true}
+│                                   output: {result_count: 3}
+│                                   metadata.backend: "travel_ai_search_api"
+└── agent          (iteration 1)
+    └── llm_call    -> final answer, built from the 3 hotels returned over real HTTP
+```
+
+Exactly the spec's own diagram: `Concierge agent → search tool → Travel AI Search API → results → agent`. `metadata.backend` is the one field distinguishing this from the local provider's identical trace shape — same span name (`travel_search_backend`) either way, the same "structural consistency across providers" reasoning `MockProvider`/`AnthropicProvider` established for `llm_call` back in Milestones 2/5.
+
+**Cross-checked against the local provider for the same query**: `tests/integration/test_travel_ai_search_provider.py::test_search_hotels_matches_the_local_provider` asserts the API-backed and local-backed results are identical (`api_results == local_results`) for `search_hotels("algarve", family_friendly=True)` — the same business answer, two different mechanisms, exactly what "service composition without creating a hard dependency" should mean in practice.
+
+**Real numbers**:
+
+```
+make test              238 -> 253 passed (12 deselected, unchanged)
+make test-integration  7 -> 11 passed (5 skipped, unchanged) — the 4 new
+                        Travel AI Search tests are NOT skip-by-default,
+                        unlike the Anthropic integration tests: no paid
+                        credential is needed, only a loopback HTTP server
+                        this file starts and stops itself.
+make tools-smoke-test  unchanged output — confirms the default (local)
+                        path is byte-for-byte the same as before M18.
+```
+
+**Interpretation**: the real finding of this milestone isn't the HTTP client code itself — it's that the "swap providers with zero call-site changes" pattern from ADR-003 transferred cleanly to a second, unrelated domain (search vs. LLM completions), and that the one real wrinkle it hit (the import cycle) came from an incidental detail — where a JSON loader happened to live — not from the abstraction design itself. The abstraction was validated by refactoring around an existing, working, well-tested system and having its behavior provably not change, not by building something new in isolation.
+
+**Limitations**: `TravelAISearchAPIProvider`'s HTTP contract is *designed*, not *confirmed* — this repo has no access to the real Travel AI Search project, so the endpoint shapes, query parameter names, and response schema are this project's own best guess, validated only against itself (the fake server in the integration test implements the same assumption the client makes). A real deployment of that project may differ; `Destination.model_validate(...)`/`Hotel.model_validate(...)` would raise a clear error rather than silently misbehave if it does. No automatic fallback from `travel_ai_search_api` to `local` on failure was built — deliberately out of scope, see ADR-006.

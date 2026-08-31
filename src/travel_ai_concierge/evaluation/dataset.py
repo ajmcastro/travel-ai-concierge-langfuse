@@ -5,7 +5,7 @@ from pathlib import Path
 from travel_ai_concierge.evaluation.models import EvaluationCase
 
 # Path resolved via module location, not cwd — same pattern as
-# tools/data.py's get_destinations()/get_hotels().
+# providers/travel_search/data.py's get_destinations()/get_hotels().
 _DATASET_PATH = Path(__file__).resolve().parents[3] / "data" / "evaluation" / "cases.json"
 
 

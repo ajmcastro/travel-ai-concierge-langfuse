@@ -17,6 +17,7 @@ from travel_ai_concierge.conversation import get_conversation_store
 from travel_ai_concierge.observability import get_langfuse_client
 from travel_ai_concierge.prompts import SYSTEM_PROMPT_FALLBACK
 from travel_ai_concierge.providers.llm import get_llm_provider
+from travel_ai_concierge.providers.travel_search import get_travel_search_provider
 
 
 class _StubPrompt:
@@ -49,6 +50,7 @@ def _clear_all_caches() -> None:
     get_langfuse_client.cache_clear()
     get_agent_graph.cache_clear()
     get_conversation_store.cache_clear()
+    get_travel_search_provider.cache_clear()
 
 
 @pytest.fixture(autouse=True)

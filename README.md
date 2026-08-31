@@ -12,7 +12,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M17 — Regression detection ([progress table](#milestones))  
+> **Current milestone:** M18 — Optional Travel AI Search integration ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -29,6 +29,7 @@ Each item below is built at a specific milestone (see the [Milestones](#mileston
 - Offline and online evaluation (deterministic + LLM-as-judge + human feedback)
 - Regression detection and evaluation-driven CI
 - Production debugging workflows using trace data
+- Service composition via swappable provider abstractions (LLM, travel search)
 - Privacy and security considerations for AI observability
 
 ---
@@ -330,6 +331,31 @@ Exit code `1`, confirmed directly via `echo $?`. Full before/after output: [docs
 
 ---
 
+## Travel AI Search Integration
+
+```bash
+TRAVEL_SEARCH_PROVIDER=travel_ai_search_api TRAVEL_AI_SEARCH_BASE_URL=http://<host>:<port> make serve
+```
+
+The travel tools can be served by a separately running **Travel AI Search** backend instead of this project's own local synthetic dataset — `TravelSearchProvider`, a Protocol mirroring the LLM provider abstraction's exact design ([ADR-003](docs/decisions/ADR-003-llm-provider-abstraction.md)), with `LocalSyntheticTravelSearchProvider` (the always-available default, zero external services) and `TravelAISearchAPIProvider` (calls the separate backend over HTTP). One `Settings` value swaps the concrete implementation; `search_destinations`/`search_hotels`/`get_destination_information` and everything above them — `TOOL_SPECS`, `TOOL_REGISTRY`, the agent graph — need zero changes. Full design reasoning: [ADR-006](docs/decisions/ADR-006-travel-search-provider-abstraction.md).
+
+**The spec's own trace diagram, produced for real** — `Concierge agent → search tool → Travel AI Search API → results → agent`. Each provider opens its own `travel_search_backend` span, nested inside the tool's own span; same span name either way (`metadata.backend` tells them apart), the same "structural trace-shape consistency across providers" reasoning `MockProvider`/`AnthropicProvider` already established for `llm_call`. Captured live against a real local HTTP server standing in for the separate project:
+
+```
+travel_concierge_turn
+├── agent → llm_call
+├── execute_tools
+│   └── search_hotels
+│       └── travel_search_backend    {op: search_hotels, destination_id: algarve, ...} -> {result_count: 3}
+└── agent → llm_call    (final answer, built from the 3 hotels returned over real HTTP)
+```
+
+**The HTTP contract is designed, not confirmed** — this repo has no access to the real, separate Travel AI Search project, so the three assumed endpoints (`GET /destinations`, `GET /hotels`, `GET /destinations/{id}`) and the expectation that responses validate against this project's own `Destination`/`Hotel` models are a best-effort design, not a verified integration. Pinned end-to-end by `tests/integration/test_travel_ai_search_provider.py` against a real local HTTP server implementing exactly this contract — **not** skip-by-default like the Anthropic integration test, since no paid credential is needed, only a loopback socket.
+
+**On a backend failure, no new error-handling code was needed** — `tools_node`'s existing per-call recovery ([Milestone 6](#chat-api)) already turns a real HTTP error or connection failure into a graceful message the agent's next turn can react to, the same path [Failure and Resilience Laboratory](#failure-and-resilience-laboratory)'s `tool_exception` fault already exercises. Closes a gap that milestone's own write-up left open explicitly: "travel provider error" now has a real second provider to demonstrate a fallback *to*.
+
+---
+
 ## Chat UI
 
 ```bash
@@ -367,7 +393,7 @@ make tools-smoke-test   # calls all three tools directly, prints results + real 
 
 Three typed, synchronous functions over a small hand-authored dataset (8 destinations, 18 hotels): `search_destinations`, `search_hotels`, `get_destination_information`. Each call opens a real Langfuse **tool** observation — a distinct type from `span`/`generation`, visible as its own filter facet in the Tracing UI.
 
-Built and tested standalone in Milestone 4 before anything called them from a request — `make tools-smoke-test` still calls them directly with no parent trace, producing their own single-node root traces. Since Milestone 5, the same unchanged code is also called from inside the agent's `execute_tools` step, where it nests under the request's trace instead — see [Agent](#agent) below.
+Built and tested standalone in Milestone 4 before anything called them from a request — `make tools-smoke-test` still calls them directly with no parent trace, producing their own single-node root traces. Since Milestone 5, the same unchanged code is also called from inside the agent's `execute_tools` step, where it nests under the request's trace instead — see [Agent](#agent) below. Since Milestone 18, where the data actually comes from is a separate, swappable concern — see [Travel AI Search Integration](#travel-ai-search-integration) below.
 
 ---
 
@@ -407,12 +433,13 @@ src/travel_ai_concierge/
 ├── api/             — FastAPI app, routes (/health, /chat, /sessions/{id}, /feedback ✅ Milestone 12), request/response schemas
 ├── agent/           — LangGraph agent/tools loop ✅ (Milestone 5): state, nodes, graph
 ├── providers/llm/   — LLM provider abstraction ✅ (Milestone 2, tool-calling added M5): Mock (tag-aware destination trigger fixed after a real diagnosed regression, Milestone 16), Anthropic
+├── providers/travel_search/ — Travel search provider abstraction ✅ (Milestone 18): TravelSearchProvider Protocol, LocalSyntheticTravelSearchProvider (default), TravelAISearchAPIProvider, data.py (moved from tools/data.py)
 ├── conversation/    — In-memory per-session conversation store ✅ (Milestone 7), turn lookup by message_id (Milestone 12)
 ├── prompts.py       — Langfuse Prompt Management fetch + local fallback ✅ (Milestone 8)
 ├── faults.py        — Controllable fault injection: FaultInjectingProvider, make_failing_tool() ✅ (Milestone 15)
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
-├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5)
+├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5; delegate to providers/travel_search/ since M18)
 └── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10), LLM-as-judge ✅ (Milestone 11), trajectory metrics + final-answer comparison ✅ (Milestone 13), local cost/latency measurement + config comparison ✅ (Milestone 14), regression.py: baseline + CI gate ✅ (Milestone 17)
 
 ui/
@@ -462,7 +489,8 @@ data/
 | M15 | Failure and resilience laboratory ✅ |
 | M16 | Observability-driven debugging exercise ✅ |
 | M17 | Regression detection ✅ |
-| M18–M21 | Optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
+| M18 | Optional Travel AI Search integration ✅ |
+| M19–M21 | Langfuse Cloud, production architecture, final experiment suite… |
 
 ---
 

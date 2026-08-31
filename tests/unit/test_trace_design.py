@@ -22,6 +22,7 @@ from travel_ai_concierge.observability import get_langfuse_client
 from travel_ai_concierge.prompts import SYSTEM_PROMPT_FALLBACK
 from travel_ai_concierge.providers.llm import Message, get_llm_provider
 from travel_ai_concierge.providers.llm.base import LLMResponse, ToolCall, Usage
+from travel_ai_concierge.providers.travel_search import get_travel_search_provider
 
 
 def _memory_client(public_key: str) -> tuple[Langfuse, InMemorySpanExporter]:
@@ -46,6 +47,7 @@ def _clear_all_caches() -> None:
     get_langfuse_client.cache_clear()
     get_agent_graph.cache_clear()
     get_conversation_store.cache_clear()
+    get_travel_search_provider.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -158,6 +160,38 @@ async def test_successful_tool_call_does_not_set_error_level(monkeypatch: pytest
     client.flush()
     execute_tools = _attrs_by_name(exporter)["execute_tools"]
     assert "langfuse.observation.level" not in execute_tools
+
+
+async def test_travel_search_backend_span_nests_under_the_tool_span(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Milestone 18: the trace shape the spec's own diagram asks for —
+    `agent -> execute_tools -> search_hotels -> travel_search_backend`.
+    Three separate `get_langfuse_client` module bindings all need patching
+    for this one (`agent.nodes`, `tools.travel_tools`, and
+    `providers.travel_search.local`) — the same sharp edge Milestone 15
+    already documented for `agent.nodes` vs `chat.py`, now with a third
+    independent binding.
+    """
+    client, exporter = _memory_client("pk-test-travel-search-backend")
+    monkeypatch.setattr("travel_ai_concierge.agent.nodes.get_langfuse_client", lambda: client)
+    monkeypatch.setattr(
+        "travel_ai_concierge.tools.travel_tools.get_langfuse_client", lambda: client
+    )
+    monkeypatch.setattr(
+        "travel_ai_concierge.providers.travel_search.local.get_langfuse_client", lambda: client
+    )
+
+    graph = get_agent_graph()
+    await graph.ainvoke(_initial_state("find me a hotel"))
+
+    client.flush()
+    spans = _attrs_by_name(exporter)
+    assert "search_hotels" in spans
+    assert "travel_search_backend" in spans
+    assert spans["travel_search_backend"]["langfuse.observation.metadata.backend"] == (
+        "local_synthetic"
+    )
 
 
 class _StubPrompt:

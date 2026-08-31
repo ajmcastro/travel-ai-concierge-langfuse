@@ -28,6 +28,7 @@ from travel_ai_concierge.prompts import SYSTEM_PROMPT_FALLBACK
 from travel_ai_concierge.providers.llm import get_llm_provider
 from travel_ai_concierge.providers.llm.base import LLMResponse, ToolCall, Usage
 from travel_ai_concierge.providers.llm.mock import MockProvider
+from travel_ai_concierge.providers.travel_search import get_travel_search_provider
 
 
 def _memory_client(public_key: str) -> tuple[Langfuse, InMemorySpanExporter]:
@@ -44,6 +45,7 @@ def _clear_all_caches() -> None:
     get_langfuse_client.cache_clear()
     get_agent_graph.cache_clear()
     get_conversation_store.cache_clear()
+    get_travel_search_provider.cache_clear()
 
 
 @pytest.fixture(autouse=True)
