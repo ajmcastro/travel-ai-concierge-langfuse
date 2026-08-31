@@ -297,3 +297,54 @@ Checking the *opposite* direction empirically: across all 39 cases, `response_is
 **Surprises**: none in the sense of a bug — the interesting finding here was methodological (re-reading the existing data before designing new code) rather than a mistake caught after the fact. Worth carrying forward as a habit for later milestones: check what the data already shows before assuming new fixtures/cases are needed.
 
 **Limitations**: everything above is under `LLM_PROVIDER=mock`. A real reasoning model could plausibly repeat tool calls, call unnecessary ones alongside a coherent answer, or produce a fluent-but-wrong response despite a correct trajectory — none of which Mock can do by construction. Not exercised in this environment (no `ANTHROPIC_API_KEY`), the same gap as every prior milestone's real-provider testing.
+
+---
+
+## 2026-08-31 — Experiment C / M14: single-agent vs explicit planning step, measured locally because Langfuse's own read API isn't available here
+
+**Hypothesis**: `AGENT_MAX_ITERATIONS=1` forces the agent to answer every case in exactly one LLM call, never offering a tool — comparing that against the default (`5`, up to two real steps for tool-requiring cases) should show a genuine, measurable quality-vs-cost trade-off, entirely under `LLM_PROVIDER=mock`, using locally-captured token/latency numbers rather than anything read back from Langfuse.
+
+**Configuration**:
+- `uv run python scripts/run_cost_latency_experiment.py` (`make cost-latency-experiment`) — runs the full 39-case dataset twice, once per config, in one process (env var + `get_settings.cache_clear()` between runs).
+- `UsageTrackingProvider` (`evaluation/cost_latency.py`) installed via a scoped monkey-patch of `agent.nodes.get_llm_provider`, restored immediately after each case.
+- Quality reused unchanged from Layer 1 (`evaluators.py`, M9) and Milestone 13's trajectory-healthy rate — no new quality logic written for this experiment.
+
+**Result**: Pass, and a real, interpretable trade-off:
+
+```
+metric                                   single-step    multi-step (default)
+----------------------------------------------------------------------------
+cases                                             39                      39
+quality (Layer 1 pass rate)                    54.2%                   70.1%
+trajectory healthy rate                         2.6%                   41.0%
+p50 latency (ms)                               0.087                   0.183
+p95 latency (ms)                               0.142                   0.260
+avg LLM calls / case                            1.00                    1.51
+avg input tokens / case                         43.1                    95.0
+avg output tokens / case                        12.1                    38.5
+avg estimated cost / case                        n/a                     n/a
+```
+
+Multi-step wins meaningfully on quality (+15.9 percentage points on Layer 1 pass rate, +38.5 points on trajectory health) at a real, measurable cost: p50 latency 2.1x single-step's, tokens 2.42x per case. Cost itself is `n/a` for both — `MockProvider`'s `"mock-echo-v1"` has no entry in `MODEL_PRICING`, correctly, since it has no real inference cost.
+
+**Interpretation**: the trajectory-healthy-rate gap (2.6% -> 41.0%) is far larger than the Layer 1 pass-rate gap (54.2% -> 70.1%) — expected, and worth naming explicitly: Layer 1's `tool_usage_matches_expected` only fails when a tool *was* expected and wasn't called (or vice versa) for cases where the trigger keyword happens to be present; trajectory health additionally penalizes clarification-direction mistakes and (structurally, though not observed under Mock — see M13) repeated calls, so it's a strictly stricter bar. Both numbers move in the same direction here, which is itself a useful sanity check that the two metrics aren't measuring contradictory things.
+
+**Surprises**: the comparison table's first real render put two config-name columns directly adjacent with no separating whitespace at all — `"single-step (max_iter=1)multi-step (max_iter=5, default)"` — because the column-width constant (`22`) was picked to look reasonable for short example names during writing, and the actual config names used were longer. Caught immediately by running the script for real against the full dataset before writing any tests for the renderer, not by guessing at a safe width. Fixed by computing the column width from the actual longest config name plus a guaranteed 2-space gap, and pinned with `test_render_comparison_header_separates_long_config_names`, which deliberately uses names longer than the old fixed width so this specific class of regression can't silently return.
+
+**Limitations**: latency numbers here (fractions of a millisecond) reflect `MockProvider`'s near-instant synthetic responses, not real LLM latency — useful for proving the p50/p95/measurement machinery itself works correctly, not for drawing real performance conclusions. Cost is `n/a` throughout for the same reason. A live "small model vs larger model" comparison (Experiment B) needs `LLM_PROVIDER=anthropic`; not exercised here, no `ANTHROPIC_API_KEY` configured, the same gap as every prior milestone's real-provider testing — `MODEL_PRICING`'s tiers and `estimate_cost_usd()` are unit-tested and ready for that case, just unexercised against a real run.
+
+---
+
+## 2026-08-31 — M14 follow-up: making the comparison visible inside Langfuse, not only in the script's own report
+
+**What happened**: after the milestone report above, the user asked directly whether Langfuse was being used at all for this experiment, and how to check — a fair question the report hadn't actually made easy to answer. Checking live rather than answering from memory: a real trace from the comparison run, opened in Langfuse's UI, had tags `evaluation` + the case's `query_class` and nothing else — no way to tell it apart from any other evaluation trace, let alone tell which of the two configs produced it. Langfuse's own built-in "Langfuse Cost Dashboard" (`Dashboards`) was also checked directly: its "Cost by Model Name" chart shows `mock-echo-v1` at a flat `$0.00`, confirming Langfuse's own native cost tracking has exactly the same "no pricing data for this model" gap our own `estimate_cost_usd()` already reports as `n/a` — a nice, unplanned cross-check that the two independent cost stories agree.
+
+**Fix, verified live in both directions**:
+- `run_case()` gained `extra_tags`/`extra_metadata` (both default `None`, additive only); `run_case_with_metrics(case, config_name=...)` now passes `["cost-latency-experiment", config_name]` / `{"cost_latency_config": config_name}` through. Ran one case directly (`config_name="single-step"`), captured its real `trace_id`, opened it in the browser: **Tags: `evaluation`, `demo`, `cost-latency-experim...`, `single-step`**; **Metadata: `cost_latency_config: "single-step"`** — both present, exactly as intended.
+- A new opt-in `--push-to-langfuse` flag additionally pushes each config as a named Langfuse Dataset Experiment run, reusing `run_named_experiment()` (Milestone 10) completely unchanged. Ran it for real (`make sync-eval-dataset` first, then the flag): got two real `dataset_run_url`s back. Opened one, then used Langfuse's own "Experiment selection" to add the second as a comparison alongside the baseline — both configs' per-case scores appeared side by side in the same table, including the M13 trajectory scores (`trajectory_healthy`, `trajectory_tool_recall`, etc.) riding along automatically since `_trajectory_evaluator` was already wired into `run_named_experiment()` unconditionally before this milestone even started. Exactly the native, no-code-needed comparison UI Milestone 10 already established for prompt v1 vs v2.
+
+**Interpretation**: this is a case where a limitation reasoned through and written down (docs/RATIONALE_PER_MILESTONE.md's original M14 entry called the missing trace tags "a deliberate, documented gap, not an oversight") turned out to be a real usability problem once a person actually tried to use it — documenting a trade-off honestly doesn't make it the right trade-off. The fix cost two new optional keyword arguments on one already-shared function, guarded by regression tests proving the addition is strictly additive (see below) — smaller than the original design discussion had implied it would be.
+
+**Tests added**: `tests/unit/test_evaluation_runner.py` gained two `InMemorySpanExporter`-based tests (the same real-attribute-verification pattern `test_trace_design.py` established for Milestone 6) — one proving `extra_tags`/`extra_metadata` merge additively with the base `["evaluation", query_class]` tagging, one proving that omitting them reproduces the exact prior behavior byte-for-byte, so no other caller (`run_evaluation.py`, `experiment.py`) is affected. `tests/unit/test_cost_latency.py` gained two more, spying on `run_case()` to confirm `run_case_with_metrics()` computes the right `extra_tags`/`extra_metadata` from `config_name` (and passes nothing extra when it's omitted). 208 tests total pass (was 204).
+
+**Limitations**: `--push-to-langfuse`'s traces don't carry local cost/latency metrics (no `UsageTrackingProvider` in that path) — the printed comparison report remains the one authoritative source for those numbers; the Langfuse-native view is for browsing the same 39 cases per config, not a second measurement of the same thing. Its own per-item "Latency" figure (89ms, observed live) is real but not comparable to the script's own p50/p95 numbers (tenths of a millisecond) — it includes Langfuse SDK/network overhead the local measurement never sees, a genuinely different quantity, not a discrepancy to reconcile.

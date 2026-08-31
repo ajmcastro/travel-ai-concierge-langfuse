@@ -12,7 +12,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M13 — Agent trajectory evaluation ([progress table](#milestones))  
+> **Current milestone:** M14 — Cost and latency experiments ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -249,6 +249,22 @@ Each case is classified against Layer 1's own text-quality evaluators as `aligne
 
 ---
 
+## Cost and Latency Experiments
+
+```bash
+make cost-latency-experiment
+```
+
+The spec's own **Experiment C** ("single-agent vs explicit planning step"): compares two agent configurations — `AGENT_MAX_ITERATIONS=1` (forces exactly one LLM call, no tool ever offered) against the default `5` (up to two real steps for tool-requiring cases) — on quality, p50/p95 latency, input/output tokens, and estimated cost, over the full 39-case dataset, printing a side-by-side table plus an auto-generated Pareto discussion.
+
+**Why this is measured locally, not read back from Langfuse**: Langfuse already captures token usage, latency, and cost natively per generation — but this deployment's "events_only" mode has no public read API at all (see [docs/langfuse.md](docs/langfuse.md)), so there's no way to pull a cross-run comparison table back out of it programmatically. `evaluation/cost_latency.py`'s `UsageTrackingProvider` wraps the real provider and records `LLMResponse.usage` + wall-clock latency in-process instead — the same "explicitly-labeled local measurement" reasoning the Chat UI's own "Latency (client-measured)" caption has used since Milestone 3. Each case still opens its own real Langfuse trace, unchanged — this script's report exists because there's no way to *compare* across runs from Langfuse's side, not because the traces themselves are hidden.
+
+**Yes, this is still visible in Langfuse — two ways**: every trace from this script carries a `cost-latency-experiment` tag plus the specific config name (e.g. `single-step`), and `metadata.cost_latency_config` — filter Tracing by tag to browse them. For a real side-by-side comparison inside Langfuse's own UI (like [Langfuse Datasets and Experiments](#langfuse-datasets-and-experiments) already gives prompt v1 vs v2), run with `--push-to-langfuse` (after `make sync-eval-dataset`): each config is additionally pushed as a named Dataset Experiment run, giving a real `dataset_run_url` per config that Langfuse can compare natively, side by side. That path is opt-in and separate from the default run — it doesn't carry local metrics (the printed table above stays the authoritative source for the actual numbers), and it re-runs the dataset a second time per config.
+
+**A real result, from this environment**: multi-step wins on quality (+15.9 percentage points on Layer 1 pass rate, +38.5 points on trajectory health) at 2.1x the p50 latency and 2.42x the tokens per case of single-step — a genuine, reproducible quality × latency × cost trade-off entirely under `LLM_PROVIDER=mock`. Estimated cost reads `n/a` for both — MockProvider has no real inference cost, confirmed against Langfuse's own built-in Cost Dashboard, which independently shows `mock-echo-v1` at a flat $0.00 for the same reason. `MODEL_PRICING` in `evaluation/cost_latency.py` is ready for a real, priced model the moment one is configured (`LLM_PROVIDER=anthropic`, not exercised here — no `ANTHROPIC_API_KEY`, the same gap as every real-provider comparison in this project).
+
+---
+
 ## Chat UI
 
 ```bash
@@ -331,7 +347,7 @@ src/travel_ai_concierge/
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
 ├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5)
-└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10), LLM-as-judge ✅ (Milestone 11), trajectory metrics + final-answer comparison ✅ (Milestone 13)
+└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10), LLM-as-judge ✅ (Milestone 11), trajectory metrics + final-answer comparison ✅ (Milestone 13), local cost/latency measurement + config comparison ✅ (Milestone 14)
 
 ui/
 └── streamlit_app.py — Chat UI ✅ (Milestone 3), talks to the API over HTTP only
@@ -375,7 +391,8 @@ data/
 | M11 | LLM-as-judge ✅ |
 | M12 | Human feedback ✅ |
 | M13 | Agent trajectory evaluation ✅ |
-| M14–M21 | Cost/latency experiments, failure & resilience, debugging exercise, regression detection, optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
+| M14 | Cost and latency experiments ✅ |
+| M15–M21 | Failure & resilience, debugging exercise, regression detection, optional Travel AI Search integration, Langfuse Cloud, production architecture, final experiment suite… |
 
 ---
 

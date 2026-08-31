@@ -1,3 +1,19 @@
+from travel_ai_concierge.evaluation.cost_latency import (
+    CaseCostLatency,
+    UsageTrackingProvider,
+    estimate_cost_usd,
+    run_case_with_metrics,
+)
+from travel_ai_concierge.evaluation.cost_latency_report import ConfigMetrics
+from travel_ai_concierge.evaluation.cost_latency_report import (
+    compute_config_metrics as compute_config_metrics,
+)
+from travel_ai_concierge.evaluation.cost_latency_report import (
+    render_cost_latency_comparison as render_cost_latency_comparison,
+)
+from travel_ai_concierge.evaluation.cost_latency_report import (
+    to_machine_readable as cost_latency_to_machine_readable,
+)
 from travel_ai_concierge.evaluation.dataset import load_dataset
 from travel_ai_concierge.evaluation.evaluators import EVALUATORS
 from travel_ai_concierge.evaluation.experiment import run_named_experiment
@@ -45,9 +61,11 @@ from travel_ai_concierge.evaluation.trajectory_report import (
 __all__ = [
     "DATASET_NAME",
     "EVALUATORS",
+    "CaseCostLatency",
     "CaseJudgment",
     "CaseReport",
     "CaseResult",
+    "ConfigMetrics",
     "EvaluationCase",
     "EvaluatorResult",
     "FakeJudgeProvider",
@@ -56,15 +74,21 @@ __all__ = [
     "JudgmentResult",
     "TrajectoryCaseReport",
     "TrajectoryMetrics",
+    "UsageTrackingProvider",
     "build_trajectory_reports",
+    "compute_config_metrics",
     "compute_trajectory_metrics",
+    "cost_latency_to_machine_readable",
+    "estimate_cost_usd",
     "get_judge_provider",
     "judge_to_machine_readable",
     "load_dataset",
+    "render_cost_latency_comparison",
     "render_human_readable",
     "render_judge_summary",
     "render_trajectory_summary",
     "run_case",
+    "run_case_with_metrics",
     "run_named_experiment",
     "summarize",
     "summarize_judgments",

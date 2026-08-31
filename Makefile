@@ -7,6 +7,7 @@
         generate-data tools-smoke-test generate-eval-dataset evaluate eval-ci evaluate-judged \
         seed-prompts prompts-smoke-test \
         sync-eval-dataset experiment-prompt-v1 experiment-prompt-v2 \
+        cost-latency-experiment \
         clean
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -141,6 +142,9 @@ experiment-prompt-v1:  ## Run the eval dataset as a Langfuse experiment against 
 
 experiment-prompt-v2:  ## Run the eval dataset as a Langfuse experiment against prompt v2 (staging)
 	PROMPT_LABEL=staging uv run python scripts/run_experiment.py --run-name prompt-v2 --description "System prompt v2 (staging)"
+
+cost-latency-experiment:  ## Compare single-step vs multi-step agent on quality, p50/p95 latency, tokens, cost
+	uv run python scripts/run_cost_latency_experiment.py
 
 # ── Housekeeping ──────────────────────────────────────────────────────────────
 

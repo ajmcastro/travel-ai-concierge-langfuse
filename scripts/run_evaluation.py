@@ -48,12 +48,18 @@ from travel_ai_concierge.evaluation import (
 from travel_ai_concierge.observability import get_langfuse_client
 from travel_ai_concierge.providers.llm import get_llm_provider
 
-RESULTS_PATH = Path(__file__).resolve().parents[1] / "data" / "evaluation" / "results" / "latest.json"
+RESULTS_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "evaluation" / "results" / "latest.json"
+)
 JUDGE_RESULTS_PATH = (
     Path(__file__).resolve().parents[1] / "data" / "evaluation" / "results" / "latest-judged.json"
 )
 TRAJECTORY_RESULTS_PATH = (
-    Path(__file__).resolve().parents[1] / "data" / "evaluation" / "results" / "latest-trajectory.json"
+    Path(__file__).resolve().parents[1]
+    / "data"
+    / "evaluation"
+    / "results"
+    / "latest-trajectory.json"
 )
 
 
@@ -82,7 +88,9 @@ async def _run_judge(reports: list[CaseReport]) -> list[CaseJudgment]:
     for report in reports:
         judgments = await judge.judge(report.case, report.result)
         case_judgments.append(
-            CaseJudgment(case_id=report.case.id, query_class=report.case.query_class, judgments=judgments)
+            CaseJudgment(
+                case_id=report.case.id, query_class=report.case.query_class, judgments=judgments
+            )
         )
     return case_judgments
 
@@ -134,7 +142,9 @@ async def _main(ci: bool, with_judge: bool) -> int:
         judge_summary = summarize_judgments(case_judgments)
 
         JUDGE_RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        JUDGE_RESULTS_PATH.write_text(json.dumps(judge_to_machine_readable(case_judgments, judge_summary), indent=2))
+        JUDGE_RESULTS_PATH.write_text(
+            json.dumps(judge_to_machine_readable(case_judgments, judge_summary), indent=2)
+        )
 
         print()
         print(render_judge_summary(case_judgments, judge_summary, judge_model=judge.model))

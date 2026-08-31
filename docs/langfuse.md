@@ -113,6 +113,15 @@ with `span_exporter=InMemorySpanExporter()` and read the attributes off the
 finished spans directly, since that exercises the exact same SDK code without
 depending on any read API at all.
 
+Milestone 14's cost/latency comparison hits this same wall from a different
+angle: there's no way to pull a *cross-run* comparison (config A vs config B)
+back out of Langfuse programmatically at all, `InMemorySpanExporter` included
+— that pattern verifies one span's own attributes, not an aggregate across
+many. `evaluation/cost_latency.py` sidesteps the read API question entirely
+instead of working around it: it captures `LLMResponse.usage` and wall-clock
+latency in its own process, before anything is ever sent to Langfuse, so it
+never needs to read anything back.
+
 ## Stopping / resetting
 
 ```bash
@@ -122,6 +131,6 @@ docker compose down -v      # stop containers AND delete all data
 
 ## What's deliberately not covered here
 
-- Prompt management is covered as of Milestone 8, a local deterministic evaluation framework as of Milestone 9, Langfuse dataset publishing/experiments as of Milestone 10, LLM-as-judge as of Milestone 11, and human feedback scoring as of Milestone 12 — see [docs/architecture.md](architecture.md#prompt-management-m8) and its "Evaluation Framework" / "Langfuse Datasets and Experiments" / "LLM-as-Judge" / "Human Feedback" sections.
+- Prompt management is covered as of Milestone 8, a local deterministic evaluation framework as of Milestone 9, Langfuse dataset publishing/experiments as of Milestone 10, LLM-as-judge as of Milestone 11, human feedback scoring as of Milestone 12, agent trajectory evaluation as of Milestone 13, and cost/latency experiments as of Milestone 14 — see [docs/architecture.md](architecture.md#prompt-management-m8) and its "Evaluation Framework" / "Langfuse Datasets and Experiments" / "LLM-as-Judge" / "Human Feedback" / "Agent Trajectory Evaluation" / "Cost and Latency Experiments" sections.
 - Production security hardening, TLS, multi-tenant auth — out of scope for a local educational stack (see ADR-004's discussion of the local/Cloud split)
 - Switching to Langfuse Cloud — see `.env.example` and ADR-004; no code changes are required, only the three `LANGFUSE_*` values

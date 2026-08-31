@@ -35,7 +35,9 @@ from travel_ai_concierge.evaluation import run_named_experiment
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-name", required=True, help="distinguishes this run from others on the same dataset")
+    parser.add_argument(
+        "--run-name", required=True, help="distinguishes this run from others on the same dataset"
+    )
     parser.add_argument("--description", default=None)
     parser.add_argument(
         "--with-judge",
@@ -45,9 +47,13 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.with_judge and get_settings().judge_provider != "fake":
-        print("Running a real judge over every dataset item — real latency/cost, not the free default.")
+        print(
+            "Running a real judge over every dataset item — real latency/cost, not the free default."
+        )
 
-    result = run_named_experiment(run_name=args.run_name, description=args.description, with_judge=args.with_judge)
+    result = run_named_experiment(
+        run_name=args.run_name, description=args.description, with_judge=args.with_judge
+    )
     print(result.format())
     if result.dataset_run_url:
         print(f"\nCompare this run against others in Langfuse: {result.dataset_run_url}")

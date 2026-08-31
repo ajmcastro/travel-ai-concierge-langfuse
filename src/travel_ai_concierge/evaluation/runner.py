@@ -1,3 +1,5 @@
+from typing import Any
+
 from langfuse import propagate_attributes
 
 from travel_ai_concierge.agent import get_agent_graph
@@ -7,7 +9,12 @@ from travel_ai_concierge.prompts import get_system_prompt
 from travel_ai_concierge.providers.llm import Message
 
 
-async def run_case(case: EvaluationCase) -> CaseResult:
+async def run_case(
+    case: EvaluationCase,
+    *,
+    extra_tags: list[str] | None = None,
+    extra_metadata: dict[str, Any] | None = None,
+) -> CaseResult:
     """Run one evaluation case through the real agent graph.
 
     Deliberately always the agent path (`get_agent_graph()`), regardless of
@@ -17,6 +24,12 @@ async def run_case(case: EvaluationCase) -> CaseResult:
     name production traffic uses), tagged `evaluation` plus its query class,
     so a failing case can be opened and inspected exactly like a real
     request — not a parallel, invisible process.
+
+    `extra_tags`/`extra_metadata` (Milestone 14) let a caller attach its own
+    identifying tags/metadata on top of the two above — e.g. which agent
+    configuration produced this trace — without every other caller (M9's
+    `run_evaluation.py`, M10/M11/M13's `experiment.py`) needing to know or
+    care; both default to `None` and add nothing when omitted.
     """
     client = get_langfuse_client()
     prompt = get_system_prompt()
@@ -28,8 +41,12 @@ async def run_case(case: EvaluationCase) -> CaseResult:
         trace_id = span.trace_id
         with propagate_attributes(
             session_id=f"evaluation-{case.id}",
-            tags=["evaluation", case.query_class],
-            metadata={"case_id": case.id, "query_class": case.query_class},
+            tags=["evaluation", case.query_class, *(extra_tags or [])],
+            metadata={
+                "case_id": case.id,
+                "query_class": case.query_class,
+                **(extra_metadata or {}),
+            },
             prompt=prompt,
         ):
             messages = [

@@ -10,6 +10,8 @@ established in Milestone 8 (get_prompt() makes a real network call).
 """
 
 import pytest
+from langfuse import Langfuse
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from travel_ai_concierge.agent import get_agent_graph
 from travel_ai_concierge.config import get_settings
@@ -126,3 +128,63 @@ async def test_run_case_isolates_trace_ids_across_cases(monkeypatch: pytest.Monk
     result_b = await run_case(case_b)
 
     assert result_a.trace_id != result_b.trace_id
+
+
+def _memory_client(public_key: str) -> tuple[Langfuse, InMemorySpanExporter]:
+    # Same pattern as test_trace_design.py: a fresh public_key per test
+    # guarantees a fresh in-memory exporter, and reading real exported OTel
+    # attributes verifies what propagate_attributes() actually did, not
+    # just that run_case() didn't raise.
+    exporter = InMemorySpanExporter()
+    client = Langfuse(
+        public_key=public_key, secret_key="sk-test", span_exporter=exporter, tracing_enabled=True
+    )
+    return client, exporter
+
+
+async def test_run_case_extra_tags_and_metadata_are_additive_not_replacing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # Milestone 14: extra_tags/extra_metadata let a caller (cost_latency.py)
+    # attach config-identifying data without losing the base "evaluation" +
+    # query_class tagging every other caller (run_evaluation.py,
+    # experiment.py) still relies on.
+    client, exporter = _memory_client("pk-test-run-case-extra-tags")
+    monkeypatch.setattr("travel_ai_concierge.evaluation.runner.get_langfuse_client", lambda: client)
+    monkeypatch.setattr(
+        "travel_ai_concierge.agent.nodes.get_llm_provider", lambda: NoToolProvider()
+    )
+    case = EvaluationCase(id="c4", query_class="demo", message="hi")
+
+    await run_case(
+        case,
+        extra_tags=["cost-latency-experiment", "single-step"],
+        extra_metadata={"cost_latency_config": "single-step"},
+    )
+
+    client.flush()
+    root = next(s for s in exporter.get_finished_spans() if s.name == "travel_concierge_turn")
+    tags = root.attributes["langfuse.trace.tags"]
+    assert set(tags) == {"evaluation", "demo", "cost-latency-experiment", "single-step"}
+    assert root.attributes["langfuse.trace.metadata.cost_latency_config"] == "single-step"
+    assert root.attributes["langfuse.trace.metadata.case_id"] == "c4"
+    assert root.attributes["langfuse.trace.metadata.query_class"] == "demo"
+
+
+async def test_run_case_without_extras_behaves_exactly_as_before(monkeypatch: pytest.MonkeyPatch):
+    # Regression guard: every existing caller omits extra_tags/extra_metadata
+    # entirely — the base tagging must be byte-for-byte what it was before
+    # Milestone 14 added the parameters.
+    client, exporter = _memory_client("pk-test-run-case-no-extras")
+    monkeypatch.setattr("travel_ai_concierge.evaluation.runner.get_langfuse_client", lambda: client)
+    monkeypatch.setattr(
+        "travel_ai_concierge.agent.nodes.get_llm_provider", lambda: NoToolProvider()
+    )
+    case = EvaluationCase(id="c5", query_class="demo", message="hi")
+
+    await run_case(case)
+
+    client.flush()
+    root = next(s for s in exporter.get_finished_spans() if s.name == "travel_concierge_turn")
+    assert set(root.attributes["langfuse.trace.tags"]) == {"evaluation", "demo"}
+    assert "langfuse.trace.metadata.cost_latency_config" not in root.attributes

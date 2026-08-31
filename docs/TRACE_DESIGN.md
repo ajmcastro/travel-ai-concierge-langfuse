@@ -62,6 +62,22 @@ list with values that don't make good filters (e.g. exact model name — a
 better `metadata` value than a `tag`, since it doesn't neatly bucket traffic
 the way "agent vs. direct" does).
 
+**Evaluation traces get their own, separate tagging** — `evaluation/runner.py`'s
+`run_case()` (Milestone 9) tags every case `["evaluation", case.query_class]`
+with `metadata={"case_id": ..., "query_class": ...}`, independent of the four
+production axes above (evaluation runs never go through `chat.py`). Milestone
+14 extended this additively rather than adding a third tagging scheme:
+`run_case()` gained keyword-only `extra_tags`/`extra_metadata` (both default
+`None`, changing nothing when omitted), which `cost_latency.py`'s
+`run_case_with_metrics(case, config_name=...)` uses to add a
+`cost-latency-experiment` tag plus the specific config name, and a
+`cost_latency_config` metadata field — added specifically so a user could
+filter Tracing by *which agent configuration* produced a given evaluation
+trace, a real gap found only after asking "is this even visible in Langfuse?"
+(see [EXPERIMENTS.md](EXPERIMENTS.md), Milestone 14). Same principle as the
+axes above: tags for what you'd filter the trace *list* by, metadata for
+detail you'd want once you're already looking at one trace.
+
 ## 3. Error metadata
 
 Langfuse observations carry a first-class `level` (`DEBUG`/`DEFAULT`/
