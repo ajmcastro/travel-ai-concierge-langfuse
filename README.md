@@ -84,6 +84,8 @@ make health
 make ui
 ```
 
+> **Security note**: `.env.example`'s Langfuse keys (and the `LANGFUSE_INIT_*` values `make env` copies from it) are a shared, published local-dev placeholder — that's what makes `make env && make langfuse-up` work with zero signup. They're only valid against your own local Docker stack. Regenerate all of them (`openssl rand -hex 32`, or `-hex 16` for the shorter ones) before running this anywhere reachable by anyone else. See [docs/langfuse.md](docs/langfuse.md#credentials-and-headless-initialization).
+
 ---
 
 ## Langfuse — local self-hosted (default)
@@ -390,6 +392,8 @@ trajectory health (43.6%) among the 4 configurations compared.
 **A real tagging bug found and fixed before the suite ran once**: `run_case_with_metrics()` ([Milestone 14](#cost-and-latency-experiments)) hardcoded the `cost-latency-experiment` Langfuse tag — reused unchanged, every trace from this new milestone would have been mislabeled as an M14 trace. Fixed with a backward-compatible `experiment_tag` parameter (M14's own tests needed no changes); verified live that traces now carry `final-experiment-suite`, not the old tag.
 
 Full output, the complete engineering analysis, and what's honestly not exercised live in this environment (a real second model, a real independent judge): [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md), Milestone 21.
+
+**Update — with a real model configured** (`LLM_PROVIDER=anthropic`), the prompt-invariance ceiling above finally breaks: v1 and v2 stop matching exactly, real cost/latency numbers replace `$0.00`/`n/a`, and a genuinely more interesting finding shows up than "one prompt wins" — see [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md), "Real Anthropic provider, at last."
 
 ---
 

@@ -15,7 +15,14 @@ from travel_ai_concierge.providers.llm import Message, get_llm_provider
 
 
 @pytest.fixture(autouse=True)
-def _clear_caches():
+def _clear_caches(monkeypatch: pytest.MonkeyPatch):
+    # Pinned explicitly rather than relying on .env's own default — this
+    # file's whole "offline, no credentials" promise (see module docstring)
+    # only holds if LLM_PROVIDER actually resolves to mock, which stops
+    # being true the moment a real LLM_PROVIDER=anthropic is configured for
+    # live use elsewhere in this project (found live: these tests silently
+    # started making real API calls once that happened).
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
     get_settings.cache_clear()
     get_llm_provider.cache_clear()
     get_agent_graph.cache_clear()

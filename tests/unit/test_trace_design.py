@@ -51,7 +51,14 @@ def _clear_all_caches() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _clear_caches():
+def _clear_caches(monkeypatch: pytest.MonkeyPatch):
+    # Pinned explicitly rather than relying on .env's own default — tests in
+    # this file that call get_agent_graph() directly (not through /chat's
+    # own _chat_test_client, which already pins this) have no other
+    # isolation from a real LLM_PROVIDER=anthropic configured for live use
+    # elsewhere in this project; found live when that happened for the
+    # first time and two of these tests started hitting the real API.
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
     _clear_all_caches()
     yield
     _clear_all_caches()

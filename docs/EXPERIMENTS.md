@@ -710,3 +710,72 @@ make eval-ci            PASS, zero drift from the committed M17 baseline
 **Interpretation**: this milestone's real test wasn't whether the script ran — it was whether a genuinely new, independently-composed measurement path (`final_suite.py`, built without looking at `cost_latency_report.py`'s internals beyond its public functions) would reproduce numbers three earlier milestones (M14, M17, and implicitly M9/M11/M13) already established, or silently diverge from them. It reproduced them exactly, which is a stronger form of "the reused modules are correct" evidence than any of those modules' own unit tests could provide alone — an integration-level cross-check none of M9-M17 individually could have run, because none of them had a reason to combine every prior metric into one report until this milestone asked for one.
 
 **Limitations**: no real second model (`ANTHROPIC_API_KEY` unavailable, as stated above) and no "improved tool descriptions" variant — `MockProvider` reads tool *names* only, never descriptions (same `_decide()` fact as the prompt-content finding), so a tool-description axis would be exactly as inert here as the prompt axis turned out to be; building one would only prove the same structural fact twice. The judge scores above are `FakeJudgeProvider`'s (default, offline, free) — its own module docstring is explicit that its scores are *derived from* Layer 1's evaluator outcomes, not an independent read of quality, so "judge: relevance" and "deterministic score" moving together here is not independent confirmation, it's the same underlying signal restated; a real, independent judge score needs `JUDGE_PROVIDER=anthropic`, unexercised live for the same credential reason. "Human feedback" is correctly `n/a` throughout — no human has ever rated any of these 39 synthetic cases; that column would only populate from real `/chat` traffic (Milestone 12), a fundamentally different data source than this offline suite.
+
+---
+
+## 2026-09-01 — Real Anthropic provider, at last: the prompt-invariance ceiling breaks, and something more interesting than "prompt v2 wins" shows up
+
+**Context**: every real-provider comparison since Milestone 2 has carried the same caveat — "unverified live, no `ANTHROPIC_API_KEY` in this environment." That gap closes here. The user configured `LLM_PROVIDER=anthropic` / `LLM_MODEL=claude-sonnet-4-6` and `JUDGE_PROVIDER=anthropic` / `JUDGE_MODEL=claude-sonnet-5` in their own `.env` and ran, in order: `make test-integration`, `make evaluate-judged`, `make experiment-prompt-v1`, `make experiment-prompt-v2`, `make final-experiment-suite`. Model names are used exactly as configured; this entry does not independently verify them against Anthropic's current public model catalog, the same "illustrative, not verified" stance `MODEL_PRICING`'s own docstring already takes in `evaluation/cost_latency.py`.
+
+**A real bug found mid-run, before any results existed to write down**: the first `make final-experiment-suite` attempt crashed on case ~29 of the third config, with a live judge response `{"dimension": "constraint_satisfaction": 5, ...}` — a genuine LLM formatting slip (an extra colon, missing the `"score"` key) that `_parse_judgments()` correctly rejected as invalid JSON, exactly the "never silently fabricate a score" behavior `judge.py`'s own docstring promises. The real gap was one layer up: `scripts/run_final_experiment_suite.py` had no resilience around a single bad judge response, so it threw away the two already-completed (and already-paid-for) configs along with it, and never persisted anything until all four configs finished. Fixed with two small, targeted changes: retry once on `JudgeParseError` (the failure is stochastic, not deterministic), skip just that one case's judge score if it fails twice (matching the existing "return `None`/omit rather than fabricate" convention `estimate_cost_usd()` already uses), and write `latest-final-suite.json` after every config instead of only at the end. The re-run afterward judged all 39 cases in all 4 configs cleanly — either the retry worked or the flaky response simply didn't recur, but the resilience is real regardless.
+
+**Result 1 — real cost and latency, for the first time in this project.** Previously every cost/latency table read `n/a`/`$0.00` under `MockProvider`. From `make final-experiment-suite`'s `data/evaluation/results/latest-final-suite.json`:
+
+```
+metric                          prod-v1 x multi-step   staging-v2 x multi-step   prod-v1 x single-step   staging-v2 x single-step
+--------------------------------------------------------------------------------------------------------------------------------
+quality (Layer 1 pass rate)                    88.1%                    87.4%                    60.2%                    60.2%
+trajectory healthy rate                        56.4%                    51.3%                    12.8%                    12.8%
+tool precision                                 81.5%                    79.0%                      n/a                      n/a
+tool recall                                    84.6%                    84.6%                    15.4%                    15.4%
+groundedness (proxy)                          100.0%                   100.0%                      n/a                      n/a
+p50 latency                                   8.35s                    8.79s                    6.12s                    5.83s
+p95 latency                                  17.44s                   13.39s                    8.54s                    8.73s
+total tokens (in+out)                         93,552                  101,658                    12,264                    13,040
+estimated cost (39 cases)                    $0.4331                  $0.4683                   $0.1513                   $0.1479
+avg cost / case                             $0.0111                  $0.0120                   $0.0039                   $0.0038
+judge: relevance                                4.82                     4.79                     4.28                     4.05
+judge: helpfulness                              4.49                     4.51                     3.72                     3.67
+judge: groundedness                             4.72                     4.49                     4.69                     4.74
+judge: constraint_satisfaction                  4.67                     4.67                     4.51                     4.28
+```
+
+The `AGENT_MAX_ITERATIONS` gap this project has now reproduced four separate times (M14, M17's regression demo, M21 under Mock, and here under a real model) holds again, and is now priced for the first time: multi-step costs ~2.9x single-step per case for a real, substantial quality/trajectory gain — a genuine, previously-only-hypothetical cost/quality trade-off Mock's `$0.00` could never show.
+
+**Result 2 — prompt v1 vs v2 finally produce different numbers. But the size, and even the direction, of that difference depends on which of three separate real-model runs you look at — and that instability is itself the finding.**
+
+Three independent measurements exist, all nominally comparing the same two prompt labels:
+
+*(a) `make final-experiment-suite`* — both prompts evaluated inside one script execution (the table above): `prod-v1` slightly ahead on quality (88.1% vs 87.4%), trajectory (56.4% vs 51.3%), and tool precision (81.5% vs 79.0%); tied on tool recall (84.6%).
+
+*(b) `make experiment-prompt-v1` / `make experiment-prompt-v2`* — Milestone 10's native Langfuse `run_experiment()` path, two separate script executions, real output:
+
+```
+                                  prompt-v1 (production)   prompt-v2 (staging)
+tool_usage_matches_expected                        51.3%                 61.5%
+trajectory_healthy                                 48.7%                 59.0%
+trajectory_tool_recall                             79.5%                 89.7%
+trajectory_tool_precision                          78.7%                 81.0%
+trajectory_agent_steps                             1.718                 1.821
+```
+Dataset runs: `http://localhost:3001/project/travel-ai-concierge-dev/datasets/cmtg6587u000ipj07rv4u6rsq/runs/fbbc248a8cb44b08` (v1), `.../runs/69bbd953ced5f1d2` (v2).
+
+Here `staging-v2` is ahead by ~10 percentage points on every trajectory-related metric — the **opposite** ranking from (a).
+
+*(c) `make evaluate-judged`* — a third separate execution, at the project's default settings (`PROMPT_LABEL=production`, `AGENT_MAX_ITERATIONS=5`) — nominally the *same config* as (a)'s `prod-v1 x multi-step` and (b)'s `prompt-v1` run. `data/evaluation/results/latest.json`/`latest-trajectory.json`: quality 87.6% (120 pass / 17 fail), trajectory healthy 56.4% (matches (a) exactly — 22/39), `tool_usage_matches_expected` 59.0% (23/39) — 7.7 points higher than run (b)'s 51.3% for the same nominal config.
+
+**Interpretation**: `MockProvider` is 100% deterministic — it never produces this kind of spread on repeat runs of the same config, which is exactly why every prompt-comparison result before this entry (M10, M11, M21) came back byte-identical or structurally explainable. A real model doesn't have that property, and the spread here isn't small: run (b)'s within-session v1-vs-v2 gap on `trajectory_healthy` (10.3 points) is the same order of magnitude as the cross-run noise on the *same* config between (b) and (c) (7.7 points on `tool_usage_matches_expected`). That means a single real-model run cannot distinguish "prompt v2 is meaningfully better" from "this is what run-to-run variance looks like" — and indeed, runs (a) and (b) disagree on which prompt wins at all. The evaluation harness this project has built (M9-M21) runs each case exactly once per config; nothing here repeats a config to average out this noise. That is a genuine, previously-invisible-under-Mock limitation of the harness as it stands, not a bug in any single run — repeated runs per config (with a variance/significance check) would be the natural next step, and is explicitly not built here. One contributing factor worth naming: `clarifying_question_when_expected` is only applicable to ~5 of the 39 cases (34 skips in run (c)) — a metric with that few applicable cases can swing 20 points from a single case flipping, which is part of why small aggregate differences on some evaluators should be read cautiously regardless of provider.
+
+A secondary, structural observation: under `AGENT_MAX_ITERATIONS=1` (single-step), `prod-v1` and `staging-v2` tie *exactly* on both `quality` (60.2%) and `trajectory_healthy` (12.8%) in run (a), even though the judge scores for the two configs genuinely differ (e.g. relevance 4.28 vs 4.05) — the real generated text is different, but the binary Layer 1 pass/fail pattern happens to land identically. `agent_node`'s tools-withholding check (`iterations + 1 >= agent_max_iterations`) means tools are withheld from the very first call when `agent_max_iterations=1`, so prompt content has far less surface area to affect an evaluator that mostly hinges on whether/which tool was called — a plausible, not fully confirmed, explanation for why the tie is exact rather than approximate.
+
+**A second real bug found — this time in `make test`, not the new script.** After the changes above, `make test` (the "offline, no credentials" unit suite) started failing 4 tests: two in `test_agent.py`, two in `test_trace_design.py`. All four call `get_agent_graph()` directly and rely on `MockProvider`'s deterministic "find me a hotel" → `search_hotels` trigger — but neither file's autouse cache-clearing fixture ever pinned `LLM_PROVIDER=mock`; they simply relied on `.env`'s own default being `mock`, which every `.env` in this project's history had been until this session. The moment a real `.env` set `LLM_PROVIDER=anthropic` for live use, these "offline" tests silently started making real, non-deterministic API calls instead — one test's `search_hotels`-span assertion failed because the real model didn't call that tool for that exact input this time. `test_agent.py`'s own module docstring explicitly promises "Offline via `MockProvider`'s deterministic tool-trigger heuristic... no network, no credentials" — a promise the test file wasn't actually structurally enforcing. Fixed by adding `monkeypatch.setenv("LLM_PROVIDER", "mock")` to both files' autouse fixtures, the same explicit-pin pattern `test_trace_design.py`'s own `_chat_test_client` helper and `test_resilience.py` already used elsewhere in this test suite — `make test` is back to 266/266 passed. This is the kind of gap Mock's total determinism structurally hides: every other `.env` this project has ever run against happened to make the missing isolation invisible.
+
+**Result — sanity checks**:
+
+```
+make test-integration    16 passed, 0 skipped  (previously 11 passed, 5 skipped — this closes the last of them)
+make test                266 passed, 16 deselected  (4 failures found and fixed — see above)
+make check                clean
+```
+
+**Limitations**: still the same 39-case synthetic dataset every prior milestone used — a real second model comparison exists now, but a real second *tool-description* variant still doesn't (`MockProvider`'s finding that tool descriptions are structurally invisible was never about the real provider, so this remains genuinely untested). Only one repeat per config was run for each of the three harnesses above; the variance discussion in Result 2 is drawn from comparing *different* harnesses/executions against each other, not from a designed repeated-trials experiment — suggestive, not a rigorous variance estimate. `JUDGE_PROVIDER=anthropic` judging `LLM_PROVIDER=anthropic`'s own output remains the same-model-family self-preference risk `judge.py`'s docstring and [docs/FINAL_QUESTIONS.md](FINAL_QUESTIONS.md) Q17 already name — unaddressed here, just no longer hypothetical.

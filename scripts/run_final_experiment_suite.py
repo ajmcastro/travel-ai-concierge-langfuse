@@ -50,6 +50,7 @@ from travel_ai_concierge.evaluation import (
     run_case_with_metrics,
     run_config_suite,
 )
+from travel_ai_concierge.evaluation.judge import JudgeParseError
 from travel_ai_concierge.observability import get_langfuse_client
 
 RESULTS_PATH = (
@@ -99,7 +100,15 @@ async def _run_config(name: str, env: dict[str, str]) -> ConfigSuiteResult:
         reports.append(CaseReport(case=case, result=result, evaluations=evaluations))
         cost_latencies.append(cost_latency)
 
-        judgments = await judge.judge(case, result)
+        try:
+            judgments = await judge.judge(case, result)
+        except JudgeParseError as exc:
+            print(f"  judge parse failed for case {case.id!r}, retrying once ({exc})")
+            try:
+                judgments = await judge.judge(case, result)
+            except JudgeParseError as exc2:
+                print(f"  judge parse failed again for case {case.id!r}, skipping ({exc2})")
+                continue
         case_judgments.append(
             CaseJudgment(case_id=case.id, query_class=case.query_class, judgments=judgments)
         )
@@ -109,14 +118,17 @@ async def _run_config(name: str, env: dict[str, str]) -> ConfigSuiteResult:
 
 async def _main() -> int:
     configs = []
+    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     for config in CONFIGS:
         print(f"Running config {config['name']!r}...")
         configs.append(await _run_config(config["name"], config["env"]))
+        # Saved after every config, not just at the end — a config's LLM
+        # calls are real, paid API usage, so a later config's failure
+        # (e.g. a judge parse error surviving the retry above) must not
+        # discard already-completed work.
+        RESULTS_PATH.write_text(json.dumps(final_suite_to_machine_readable(configs), indent=2))
 
     get_langfuse_client().flush()
-
-    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    RESULTS_PATH.write_text(json.dumps(final_suite_to_machine_readable(configs), indent=2))
 
     print()
     print(render_final_suite_report(configs))
