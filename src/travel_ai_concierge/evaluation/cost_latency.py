@@ -98,7 +98,10 @@ class CaseCostLatency(BaseModel):
 
 
 async def run_case_with_metrics(
-    case: EvaluationCase, *, config_name: str | None = None
+    case: EvaluationCase,
+    *,
+    config_name: str | None = None,
+    experiment_tag: str = "cost-latency-experiment",
 ) -> tuple[CaseResult, CaseCostLatency]:
     """Runs one case through the real agent graph (`run_case()`, unchanged)
     while a `UsageTrackingProvider` stands in for the real provider.
@@ -122,6 +125,12 @@ async def run_case_with_metrics(
     Langfuse's UI by which configuration produced it, closing the gap
     documented in RATIONALE_PER_MILESTONE.md's Milestone 14 entry (the
     traces originally carried no config-identifying data at all).
+    `experiment_tag` (default unchanged from Milestone 14, `"cost-latency-experiment"`)
+    lets a different caller — Milestone 21's final suite, which reuses this
+    same function rather than duplicating its provider-patching logic —
+    tag its own traces `"final-experiment-suite"` instead, so the two
+    milestones' traces stay distinguishable in Langfuse's UI even though
+    they share this one measurement mechanism.
     """
     original_get_llm_provider = agent_nodes.get_llm_provider  # type: ignore[attr-defined]
     tracker = UsageTrackingProvider(original_get_llm_provider())
@@ -129,7 +138,7 @@ async def run_case_with_metrics(
     try:
         result = await run_case(
             case,
-            extra_tags=["cost-latency-experiment", config_name] if config_name else None,
+            extra_tags=[experiment_tag, config_name] if config_name else None,
             extra_metadata={"cost_latency_config": config_name} if config_name else None,
         )
     finally:

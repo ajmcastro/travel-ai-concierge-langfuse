@@ -7,7 +7,7 @@
         generate-data tools-smoke-test generate-eval-dataset evaluate eval-baseline eval-ci evaluate-judged \
         seed-prompts prompts-smoke-test \
         sync-eval-dataset experiment-prompt-v1 experiment-prompt-v2 \
-        cost-latency-experiment \
+        cost-latency-experiment final-experiment-suite \
         fault-injection-lab \
         clean
 
@@ -149,6 +149,9 @@ experiment-prompt-v2:  ## Run the eval dataset as a Langfuse experiment against 
 
 cost-latency-experiment:  ## Compare single-step vs multi-step agent on quality, p50/p95 latency, tokens, cost
 	uv run python scripts/run_cost_latency_experiment.py
+
+final-experiment-suite:  ## Milestone 21: 4-config matrix (prompt v1/v2 x single/multi-step), every reported dimension, final recommendation
+	uv run python scripts/run_final_experiment_suite.py
 
 fault-injection-lab:  ## Inject each spec fault type, observe traces, verify graceful degradation
 	uv run python scripts/fault_injection_lab.py

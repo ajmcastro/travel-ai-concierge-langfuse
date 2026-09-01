@@ -12,8 +12,8 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M20 — Production observability architecture ([progress table](#milestones))  
-> Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
+> **Status:** All 22 milestones (M0–M21) complete — see the [Milestones](#milestones) table.  
+> Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result. Check your own understanding against [docs/FINAL_QUESTIONS.md](docs/FINAL_QUESTIONS.md), the project spec's own 28 closing questions, each answered directly.
 
 ---
 
@@ -31,6 +31,7 @@ Each item below is built at a specific milestone (see the [Milestones](#mileston
 - Production debugging workflows using trace data
 - Service composition via swappable provider abstractions (LLM, travel search)
 - Privacy and security considerations for AI observability
+- Multi-dimensional experiment comparison and evidence-based deployment decisions
 
 ---
 
@@ -364,6 +365,34 @@ travel_concierge_turn
 
 ---
 
+## Final Experiment Suite
+
+```bash
+make final-experiment-suite
+```
+
+The capstone milestone: a representative 4-config experiment matrix, reported across every dimension the spec asks for — deterministic score, LLM judge score, human feedback (where available), tool accuracy, groundedness, latency, cost — closing with an auto-generated engineering recommendation. Nothing new is measured: every number reuses a mechanism from an earlier milestone (Layer 1 evaluators M9, LLM judge M11, human feedback M12, trajectory metrics M13, cost/latency M14) — this milestone's own code is composition and rendering, not a seventh measurement pipeline.
+
+**The matrix** crosses `PROMPT_LABEL` (production/staging, [Milestone 8](#prompt-management)) against `AGENT_MAX_ITERATIONS` (1/5, [Cost and Latency Experiments](#cost-and-latency-experiments)) — substituting for the spec's own "prompt version x two models" example, since a second real model needs `ANTHROPIC_API_KEY`, unavailable in this environment. Swapping in a real model is a one-line change to the script's `CONFIGS` list the moment credentials exist.
+
+**A real, unplanned validation**: the two prompt-version pairs matched to two decimal places on every single metric (`MockProvider` never reads the system prompt — verified by reading `_decide()`, not assumed), while `AGENT_MAX_ITERATIONS` reproduced Milestone 14's own quality gap exactly (73.1% → 54.2%). Neither result was an assertion written in advance — a harness that reproduces known-identical and known-different conditions correctly has passed a genuine validity check on its own.
+
+```
+metric                          prod-v1 x multi-step  staging-v2 x multi-step  prod-v1 x single-step  staging-v2 x single-step
+deterministic score (Layer 1)                  73.1%                    73.1%                   54.2%                     54.2%
+trajectory healthy rate                        43.6%                    43.6%                    2.6%                      2.6%
+tool recall                                    61.5%                    61.5%                   15.4%                     15.4%
+
+Recommended: 'prod-v1 x multi-step' — highest deterministic quality (73.1%) and
+trajectory health (43.6%) among the 4 configurations compared.
+```
+
+**A real tagging bug found and fixed before the suite ran once**: `run_case_with_metrics()` ([Milestone 14](#cost-and-latency-experiments)) hardcoded the `cost-latency-experiment` Langfuse tag — reused unchanged, every trace from this new milestone would have been mislabeled as an M14 trace. Fixed with a backward-compatible `experiment_tag` parameter (M14's own tests needed no changes); verified live that traces now carry `final-experiment-suite`, not the old tag.
+
+Full output, the complete engineering analysis, and what's honestly not exercised live in this environment (a real second model, a real independent judge): [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md), Milestone 21.
+
+---
+
 ## Chat UI
 
 ```bash
@@ -448,7 +477,7 @@ src/travel_ai_concierge/
 ├── observability/   — Langfuse client factory ✅ (Milestone 1)
 ├── domain/          — Destination, Hotel models ✅ (Milestone 4)
 ├── tools/           — search_destinations, search_hotels, get_destination_information ✅ (Milestone 4, connected via the agent M5; delegate to providers/travel_search/ since M18)
-└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10), LLM-as-judge ✅ (Milestone 11), trajectory metrics + final-answer comparison ✅ (Milestone 13), local cost/latency measurement + config comparison ✅ (Milestone 14), regression.py: baseline + CI gate ✅ (Milestone 17)
+└── evaluation/      — Dataset loader, evaluators, runner, reporting ✅ (Milestone 9), Langfuse dataset sync + experiments ✅ (Milestone 10), LLM-as-judge ✅ (Milestone 11), trajectory metrics + final-answer comparison ✅ (Milestone 13), local cost/latency measurement + config comparison ✅ (Milestone 14), regression.py: baseline + CI gate ✅ (Milestone 17), final_suite.py: N-config matrix composing every prior metric ✅ (Milestone 21)
 
 ui/
 └── streamlit_app.py — Chat UI ✅ (Milestone 3), talks to the API over HTTP only
@@ -472,6 +501,7 @@ data/
 | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) | See what was actually tried and measured, including surprises and dead ends |
 | [docs/decisions/](docs/decisions/) | Read the formal ADRs behind each major technical choice (agent framework, UI, LLM provider, Langfuse deployment) |
 | [docs/PRODUCTION_ARCHITECTURE.md](docs/PRODUCTION_ARCHITECTURE.md) | Understand how this system would need to evolve for a real production deployment — metrics, logs, PII, secrets, scaling, and more, grounded in this codebase's real gaps |
+| [docs/FINAL_QUESTIONS.md](docs/FINAL_QUESTIONS.md) | Check your own understanding against the project spec's 28 closing questions, each answered directly with a pointer to the real code or doc behind it |
 | [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md) | Read the full, original brief this project is built from — kept verbatim for transparency |
 
 ---
@@ -501,7 +531,7 @@ data/
 | M18 | Optional Travel AI Search integration ✅ |
 | M19 | Langfuse Cloud ✅ |
 | M20 | Production observability architecture ✅ |
-| M21 | Final experiment suite |
+| M21 | Final experiment suite ✅ |
 
 ---
 

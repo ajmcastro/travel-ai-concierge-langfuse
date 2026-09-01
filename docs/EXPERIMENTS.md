@@ -643,3 +643,70 @@ make test-integration   11 passed, 5 skipped  (unchanged — no new integration 
 **Interpretation**: the real finding of this milestone is procedural, not technical — "document and test" turned out to mean "verify an already-correct design, and make an already-adequate test suite say so explicitly," not "add a mechanism." The temptation to write a separate `test_langfuse_cloud.py` with its own throwaway client construction was real and was rejected specifically because it would have been the exact duplication the spec's own last line warns against — the *existing* connectivity tests already are the Cloud test, once framed honestly as testing "whichever target is configured" instead of "the local instance."
 
 **Limitations**: no real Langfuse Cloud account is configured in this environment, so the actual round trip to `cloud.langfuse.com` was never executed — the same "no credential here" gap this project has been explicit about for the Anthropic provider and the real LLM judge since Milestones 2 and 11. What's verified instead: (1) offline, that construction never depends on the host's value, and (2) live, that the exact same code and the exact same tests correctly reach and confirm a real, non-default host that isn't the one every default `.env` shares — the strongest evidence available without a paid account, not a substitute for the real thing, and stated as such rather than blurred.
+
+---
+
+## 2026-09-01 — M21: final experiment suite — a real 4-config matrix, composing seven milestones' worth of measurement into one report
+
+**Hypothesis**: every metric the spec's "Report" list names (deterministic score, LLM judge score, human feedback where available, tool accuracy, groundedness, latency, cost) already has a real, tested measurement mechanism somewhere in this project (M9, M11, M12, M13, M14) — composing them into one N-config comparison should need no new measurement code, only a new aggregation/rendering layer, the same "reuse, don't duplicate" discipline this project has held since Milestone 10.
+
+**A real tagging bug found and fixed before the suite even ran once**: `run_case_with_metrics()` (M14) hardcoded `extra_tags=["cost-latency-experiment", config_name]` — reusing it unchanged for this milestone's own script would have mislabeled every M21 trace as an M14 trace in Langfuse's UI. Fixed by adding a keyword-only `experiment_tag: str = "cost-latency-experiment"` parameter (default preserves M14's exact existing behavior — `tests/unit/test_cost_latency.py`'s 12 tests all still pass unmodified), with this milestone's script passing `experiment_tag="final-experiment-suite"`. Verified live, not just by the tests: opened a real trace afterward and confirmed its tags read `evaluation`, `<query_class>`, `final-experiment-suite`, `<config-name>` — not `cost-latency-experiment`.
+
+**Configuration**: the spec's own example matrix crosses prompt version against two different models plus a tool-description variant — this environment has no `ANTHROPIC_API_KEY` (the same recurring gap as every real-provider comparison since Milestone 2), so a second real model can't be exercised live here. The matrix run instead crosses the two axes that are actually live and differentiable under `LLM_PROVIDER=mock` in this environment:
+
+```
+prod-v1 x multi-step     (PROMPT_LABEL=production, AGENT_MAX_ITERATIONS=5 — the project default)
+staging-v2 x multi-step  (PROMPT_LABEL=staging,    AGENT_MAX_ITERATIONS=5)
+prod-v1 x single-step    (PROMPT_LABEL=production, AGENT_MAX_ITERATIONS=1)
+staging-v2 x single-step (PROMPT_LABEL=staging,    AGENT_MAX_ITERATIONS=1)
+```
+
+**Result — real output from this environment** (`make final-experiment-suite`):
+
+```
+metric                                prod-v1 x multi-step   staging-v2 x multi-step     prod-v1 x single-step  staging-v2 x single-step
+----------------------------------------------------------------------------------------------------------------------------------------
+deterministic score (Layer 1)                        73.1%                     73.1%                     54.2%                     54.2%
+judge: constraint_satisfaction                        4.31                      4.31                      5.00                      5.00
+judge: groundedness                                   5.00                      5.00                      5.00                      5.00
+judge: helpfulness                                    5.00                      5.00                      5.00                      5.00
+judge: itinerary_coherence                            3.00                      3.00                      3.00                      3.00
+judge: relevance                                      3.62                      3.62                      2.46                      2.46
+human feedback                                         n/a                       n/a                       n/a                       n/a
+tool precision                                       90.5%                     90.5%                       n/a                       n/a
+tool recall                                          61.5%                     61.5%                     15.4%                     15.4%
+groundedness (proxy)                                100.0%                    100.0%                       n/a                       n/a
+trajectory healthy rate                              43.6%                     43.6%                      2.6%                      2.6%
+p50 latency (ms)                                     0.178                     0.177                     0.093                     0.105
+p95 latency (ms)                                     0.299                     0.217                     0.189                     0.191
+avg estimated cost / case                              n/a                       n/a                       n/a                       n/a
+
+Final Engineering Analysis
+========================================
+Recommended: 'prod-v1 x multi-step' — highest deterministic quality (73.1%) and trajectory
+health (43.6%) among the 4 configurations compared.
+  Cost of that choice: p50 latency 0.178ms, ~148 tokens/case, estimated cost n/a/case.
+  Runner-up 'staging-v2 x multi-step': 73.1% quality at 1.00x the winner's p50 latency.
+```
+
+**Two independent, mutually-reinforcing findings, both exactly as predicted before the run** — the strongest kind of validation a comparison harness can get, because the harness didn't know in advance which pairs should match and which shouldn't:
+
+1. **The two prompt-version pairs are statistically identical** (73.1%/73.1% and 54.2%/54.2%, every judge dimension matching to two decimal places) — confirmed, not assumed: `providers/llm/mock.py`'s `_decide()` extracts only the last *user* message, never reads the system prompt at all. Prompt content is structurally invisible to Mock, so identical results are the *correct*, expected outcome, not a null result.
+2. **`AGENT_MAX_ITERATIONS` produces a large, consistent gap regardless of prompt version** (73.1%→54.2% quality, 43.6%→2.6% trajectory health, 61.5%→15.4% tool recall) — re-confirming Milestone 14/17's own already-established finding in a new, independently-built harness, not just repeating the same script.
+
+`prod-v1 x multi-step`'s own numbers (`quality_pass_rate=0.7310924369747899`) match Milestone 17's committed baseline (`data/evaluation/baseline.json`) to the full floating-point digit — expected, since this config *is* the project's own default, and a genuine cross-check that this new, independently-built harness measures the same thing the existing regression gate does.
+
+**The auto-generated final analysis correctly avoided a wrong conclusion**: with four configs producing two identical pairs, a naive "rank all four, declare a winner" approach could have appeared to prefer `prod-v1` over `staging-v2` by pure floating-point noise in the tied pair. `render_final_analysis()`'s ranking key is `(quality_pass_rate, trajectory_healthy_rate)` — both configs in the winning pair tie exactly, so the reported "recommendation" is really "either prompt version, running multi-step" — and the analysis's own caveat paragraph states the Mock-invariance fact explicitly rather than letting the reader infer a false prompt-quality signal from noise.
+
+**Result — sanity checks after the change**:
+
+```
+make check              clean
+make test               266 passed, 16 deselected  (was 254 before this milestone — +12 new tests)
+make test-integration   11 passed, 5 skipped  (unchanged)
+make eval-ci            PASS, zero drift from the committed M17 baseline
+```
+
+**Interpretation**: this milestone's real test wasn't whether the script ran — it was whether a genuinely new, independently-composed measurement path (`final_suite.py`, built without looking at `cost_latency_report.py`'s internals beyond its public functions) would reproduce numbers three earlier milestones (M14, M17, and implicitly M9/M11/M13) already established, or silently diverge from them. It reproduced them exactly, which is a stronger form of "the reused modules are correct" evidence than any of those modules' own unit tests could provide alone — an integration-level cross-check none of M9-M17 individually could have run, because none of them had a reason to combine every prior metric into one report until this milestone asked for one.
+
+**Limitations**: no real second model (`ANTHROPIC_API_KEY` unavailable, as stated above) and no "improved tool descriptions" variant — `MockProvider` reads tool *names* only, never descriptions (same `_decide()` fact as the prompt-content finding), so a tool-description axis would be exactly as inert here as the prompt axis turned out to be; building one would only prove the same structural fact twice. The judge scores above are `FakeJudgeProvider`'s (default, offline, free) — its own module docstring is explicit that its scores are *derived from* Layer 1's evaluator outcomes, not an independent read of quality, so "judge: relevance" and "deterministic score" moving together here is not independent confirmation, it's the same underlying signal restated; a real, independent judge score needs `JUDGE_PROVIDER=anthropic`, unexercised live for the same credential reason. "Human feedback" is correctly `n/a` throughout — no human has ever rated any of these 39 synthetic cases; that column would only populate from real `/chat` traffic (Milestone 12), a fundamentally different data source than this offline suite.

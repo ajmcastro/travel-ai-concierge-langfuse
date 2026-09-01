@@ -17,6 +17,17 @@ from travel_ai_concierge.evaluation.cost_latency_report import (
 from travel_ai_concierge.evaluation.dataset import load_dataset
 from travel_ai_concierge.evaluation.evaluators import EVALUATORS
 from travel_ai_concierge.evaluation.experiment import run_named_experiment
+from travel_ai_concierge.evaluation.final_suite import ConfigSuiteResult
+from travel_ai_concierge.evaluation.final_suite import (
+    render_final_analysis as render_final_analysis,
+)
+from travel_ai_concierge.evaluation.final_suite import (
+    render_final_suite_report as render_final_suite_report,
+)
+from travel_ai_concierge.evaluation.final_suite import run_config_suite as run_config_suite
+from travel_ai_concierge.evaluation.final_suite import (
+    to_machine_readable as final_suite_to_machine_readable,
+)
 from travel_ai_concierge.evaluation.judge import (
     FakeJudgeProvider,
     JudgeParseError,
@@ -82,6 +93,7 @@ __all__ = [
     "CaseReport",
     "CaseResult",
     "ConfigMetrics",
+    "ConfigSuiteResult",
     "EvaluationCase",
     "EvaluatorResult",
     "FakeJudgeProvider",
@@ -101,17 +113,21 @@ __all__ = [
     "compute_trajectory_metrics",
     "cost_latency_to_machine_readable",
     "estimate_cost_usd",
+    "final_suite_to_machine_readable",
     "get_judge_provider",
     "judge_to_machine_readable",
     "load_baseline",
     "load_dataset",
     "render_cost_latency_comparison",
+    "render_final_analysis",
+    "render_final_suite_report",
     "render_human_readable",
     "render_judge_summary",
     "render_regression_report",
     "render_trajectory_summary",
     "run_case",
     "run_case_with_metrics",
+    "run_config_suite",
     "run_named_experiment",
     "save_baseline",
     "summarize",
