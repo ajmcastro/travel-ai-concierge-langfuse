@@ -12,7 +12,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M19 — Langfuse Cloud ([progress table](#milestones))  
+> **Current milestone:** M20 — Production observability architecture ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -471,6 +471,7 @@ data/
 | [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) | Understand *why* a milestone was built the way it was, not just what it does |
 | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) | See what was actually tried and measured, including surprises and dead ends |
 | [docs/decisions/](docs/decisions/) | Read the formal ADRs behind each major technical choice (agent framework, UI, LLM provider, Langfuse deployment) |
+| [docs/PRODUCTION_ARCHITECTURE.md](docs/PRODUCTION_ARCHITECTURE.md) | Understand how this system would need to evolve for a real production deployment — metrics, logs, PII, secrets, scaling, and more, grounded in this codebase's real gaps |
 | [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md) | Read the full, original brief this project is built from — kept verbatim for transparency |
 
 ---
@@ -499,7 +500,8 @@ data/
 | M17 | Regression detection ✅ |
 | M18 | Optional Travel AI Search integration ✅ |
 | M19 | Langfuse Cloud ✅ |
-| M20–M21 | Production observability architecture, final experiment suite… |
+| M20 | Production observability architecture ✅ |
+| M21 | Final experiment suite |
 
 ---
 
