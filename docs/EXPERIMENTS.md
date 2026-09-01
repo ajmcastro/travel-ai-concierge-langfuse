@@ -588,3 +588,58 @@ make tools-smoke-test  unchanged output — confirms the default (local)
 **Interpretation**: the real finding of this milestone isn't the HTTP client code itself — it's that the "swap providers with zero call-site changes" pattern from ADR-003 transferred cleanly to a second, unrelated domain (search vs. LLM completions), and that the one real wrinkle it hit (the import cycle) came from an incidental detail — where a JSON loader happened to live — not from the abstraction design itself. The abstraction was validated by refactoring around an existing, working, well-tested system and having its behavior provably not change, not by building something new in isolation.
 
 **Limitations**: `TravelAISearchAPIProvider`'s HTTP contract is *designed*, not *confirmed* — this repo has no access to the real Travel AI Search project, so the endpoint shapes, query parameter names, and response schema are this project's own best guess, validated only against itself (the fake server in the integration test implements the same assumption the client makes). A real deployment of that project may differ; `Destination.model_validate(...)`/`Hotel.model_validate(...)` would raise a clear error rather than silently misbehave if it does. No automatic fallback from `travel_ai_search_api` to `local` on failure was built — deliberately out of scope, see ADR-006.
+
+---
+
+## 2026-09-01 — M19: Langfuse Cloud — proving a switch that already worked, not building a new one
+
+**Hypothesis**: `get_langfuse_client()` already threads `Settings.langfuse_host` through with zero branching (unchanged since Milestone 1) — if true, the exact same connectivity test suite should pass unmodified regardless of which real host it's pointed at, and a Cloud-shaped host should construct a client offline exactly as uneventfully as a local one.
+
+**Configuration**: this environment's real `.env` (`LANGFUSE_HOST=http://localhost:3001` — a non-default port, from a real port-3000 conflict logged back in Milestone 1) plus `make langfuse-up`'s running stack. No Langfuse Cloud account is configured anywhere in this environment.
+
+**Step 1 — grep for hardcoded hosts, before writing anything**:
+
+```bash
+grep -rn "localhost:3000\|localhost:3001\|cloud.langfuse.com" src/ ui/ scripts/ tests/
+```
+
+One hit: `Settings.langfuse_host`'s own default. No other file references a host literally — the "no duplicate instrumentation code" claim was already true, confirmed rather than assumed.
+
+**Step 2 — offline construction, a real Cloud-shaped host, no network**:
+
+```
+tests/unit/test_langfuse_client.py::test_construction_does_not_raise_with_a_cloud_shaped_host PASSED
+```
+
+`LANGFUSE_HOST=https://cloud.langfuse.com` + placeholder keys, `get_langfuse_client()` called after clearing both caches — succeeds identically to the default-host case, no exception, no network I/O (construction was already established as local-only back in Milestone 1).
+
+**Step 3 — real connectivity, against this environment's own real, non-default host**:
+
+```python
+client = get_langfuse_client()
+# configured host: http://localhost:3001
+with client.start_as_current_observation(name="m19_verification_trace") as span:
+    trace_id = span.trace_id
+client.flush()
+client.get_trace_url(trace_id=trace_id)
+# -> http://localhost:3001/project/travel-ai-concierge-dev/traces/af940bef522c350bc5034ed9ece0ff3f
+```
+
+The returned URL starts with the exact configured host — not the `3000` default nobody's `.env` in this environment actually uses. `tests/integration/test_langfuse_connectivity.py`'s two tests, reframed (not rewritten) to state this explicitly, pass against this real target:
+
+```
+test_auth_check_succeeds_against_the_configured_langfuse_target PASSED
+test_can_create_and_flush_a_trace_and_it_lands_at_the_configured_host PASSED
+```
+
+**Result**:
+
+```
+make check              clean
+make test               254 passed, 16 deselected  (was 253 before this milestone — +1 new unit test)
+make test-integration   11 passed, 5 skipped  (unchanged — no new integration test file, two existing ones reframed + one new assertion)
+```
+
+**Interpretation**: the real finding of this milestone is procedural, not technical — "document and test" turned out to mean "verify an already-correct design, and make an already-adequate test suite say so explicitly," not "add a mechanism." The temptation to write a separate `test_langfuse_cloud.py` with its own throwaway client construction was real and was rejected specifically because it would have been the exact duplication the spec's own last line warns against — the *existing* connectivity tests already are the Cloud test, once framed honestly as testing "whichever target is configured" instead of "the local instance."
+
+**Limitations**: no real Langfuse Cloud account is configured in this environment, so the actual round trip to `cloud.langfuse.com` was never executed — the same "no credential here" gap this project has been explicit about for the Anthropic provider and the real LLM judge since Milestones 2 and 11. What's verified instead: (1) offline, that construction never depends on the host's value, and (2) live, that the exact same code and the exact same tests correctly reach and confirm a real, non-default host that isn't the one every default `.env` shares — the strongest evidence available without a paid account, not a substitute for the real thing, and stated as such rather than blurred.

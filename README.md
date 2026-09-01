@@ -12,7 +12,7 @@ This repo builds a real (if toy) agentic AI application — a travel concierge �
 
 **Who this is for**: developers who can already build an LLM agent and now want to answer "is it actually working, and how would I know if it broke?" — not a Python or LangChain tutorial.
 
-> **Current milestone:** M18 — Optional Travel AI Search integration ([progress table](#milestones))  
+> **Current milestone:** M19 — Langfuse Cloud ([progress table](#milestones))  
 > Built and documented one milestone at a time — see [docs/RATIONALE_PER_MILESTONE.md](docs/RATIONALE_PER_MILESTONE.md) for the reasoning behind each step, not just the result.
 
 ---
@@ -115,7 +115,15 @@ LANGFUSE_SECRET_KEY=sk-lf-<your-cloud-key>
 LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
-No code changes required.
+No code changes required — `get_langfuse_client()` (`observability/langfuse_client.py`) has exactly one `host=settings.langfuse_host` line, with no branching on its value, unchanged since Milestone 1.
+
+**Verify the switch actually worked** the same way you'd verify local connectivity — run the same command:
+
+```bash
+make test-integration
+```
+
+`tests/integration/test_langfuse_connectivity.py` runs unmodified against whichever target `.env` currently names; it now also asserts the returned trace URL actually starts with the configured host, so a pass genuinely means a real trace landed at Cloud, not just that some request didn't error. Since Milestone 19, this is a tested guarantee, not just a documented one — see [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md), Milestone 19 (no real Cloud account is configured in *this* environment, so that specific round trip is unexercised here — the mechanism is proven structurally and against this environment's own real, non-default local host instead).
 
 ---
 
@@ -490,7 +498,8 @@ data/
 | M16 | Observability-driven debugging exercise ✅ |
 | M17 | Regression detection ✅ |
 | M18 | Optional Travel AI Search integration ✅ |
-| M19–M21 | Langfuse Cloud, production architecture, final experiment suite… |
+| M19 | Langfuse Cloud ✅ |
+| M20–M21 | Production observability architecture, final experiment suite… |
 
 ---
 
